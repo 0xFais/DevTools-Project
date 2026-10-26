@@ -1,4 +1,4 @@
-﻿using DevTools.Contracts;
+using DevTools.Contracts;
 using DevTools.Infrastructure;
 using DevTools.Modules;
 using System.Collections.ObjectModel;
@@ -89,7 +89,11 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         NavigationNode Group(string id, string title) => new(id, title, expanded: context.Get("navigation.expanded." + id, "true") == "true", saveExpansion: (key, value) => context.Save("navigation.expanded." + key, value ? "true" : "false"));
         Sidebar.Add(Leaf("overview"));
         var apps = Group("apps", "Apps Manager"); apps.Children.Add(Leaf("scoop")); Sidebar.Add(apps);
-        var developer = Group("developer-tools", "Developer Tools"); developer.Children.Add(Leaf("binaries")); Sidebar.Add(developer);
+        var developer = Group("developer-tools", "Developer Tools");
+        developer.Children.Add(Leaf("binaries"));
+        developer.Children.Add(Leaf("environment-path"));
+        developer.Children.Add(Leaf("sdks-runtimes"));
+        Sidebar.Add(developer);
         var preferences = Group("windows-preferences", "Windows Preferences"); preferences.Children.Add(Leaf("start-search"));
         foreach (var page in DevTools.Modules.Windows.WindowsPreferencesModule.Pages) preferences.Children.Add(Leaf(page.Id));
         Sidebar.Add(preferences);
