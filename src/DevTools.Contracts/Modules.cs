@@ -125,6 +125,8 @@ public sealed class ModulePage : ObservableObject
     public bool HasStartSearchWorkspace => StartSearchWorkspace is not null;
     public WindowsPreferencesWorkspace? PreferencesWorkspace { get; init; }
     public bool HasPreferencesWorkspace => PreferencesWorkspace is not null;
+    public StartupAppsWorkspace? StartupAppsWorkspace { get; init; }
+    public bool HasStartupAppsWorkspace => StartupAppsWorkspace is not null;
     public BinaryInventoryWorkspace? BinaryInventoryWorkspace { get; init; }
     public bool HasBinaryInventoryWorkspace => BinaryInventoryWorkspace is not null;
     public EnvironmentPathWorkspace? EnvironmentPathWorkspace { get; init; }

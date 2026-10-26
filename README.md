@@ -1,4 +1,4 @@
-﻿# DevTools Studio
+# DevTools Studio
 
 A native C# / WPF app for managing Windows and development tools. The Developer
 Studio interface starts in dark mode, requests administrator access at startup,
@@ -31,6 +31,7 @@ It does not apply Windows changes. Restart after importing to refresh all pages.
 - Windows edition/license detection, custom keys and authorized organization activation.
 - Windows Update controls and a Folder inspector for six Windows user folders and custom folders, with reviewed location changes, optional verified file moves and change journals.
 - Workspace overview, activity log, dark/light/system themes and extension preferences.
+- Startup apps under Windows Tools, with Run/Startup-folder inspection, confirmed additions and removals, and recoverable registry/file archives.
 
 Scoop manager is available under Apps Manager with a compact native table. See docs/SCOOP.md for features and recovery notes. The retired build-engine setup and portable bundle
 features are absent. Rider is present only as an Explorer context-menu app profile.
@@ -124,7 +125,9 @@ in the results.
 
 ## Sidebar navigation
 
-The app opens on Workspace. Apps Manager contains Scoop manager. Windows Preferences groups Start & search with the five preference pages. Windows Tools contains User folders, Update control, Windows activation, Context menu and Link handlers. Settings stays at the bottom. Group expansion is remembered; navigating to a page expands its parent group.
+The app opens on Workspace. Apps Manager contains Scoop manager. Windows Preferences groups Start & search with the five preference pages. Developer Tools contains the binary inventory. Windows Tools contains User folders, Update control, Windows activation, Context menu, Link handlers and Startup apps. Startup apps lists the 32-bit and 64-bit Run registry entries and the current-user and common Startup folders, with StartupApproved status where it can be read. It does not include scheduled tasks or services. Adding an app writes a unique value to the current user's Run key after confirmation; it validates and reads back the command without running the selected app. Remove from startup asks before removing the selected Run value or archiving the selected Startup-folder file under `Data/Machines/<profile>/StartupApps/Removed`. Registry values are backed up with their original type and data; files are moved intact, and shortcuts' target apps stay in place. Direct files are archived, not deleted. All-users entries are labeled before removal. Group expansion is remembered; navigating to a page expands its parent group.
 
 Folder inspector usage, file-move behavior and validation limits are documented in [User folders](docs/USER-FOLDERS.md).
+
+In Startup apps, choose **Choose .exe**, review the startup name and optional arguments, then **Add to my startup**. The account is the one running DevTools. New entries take effect at sign-in; Windows startup settings can manage them afterward. Commands are limited to 260 characters, including the executable path and arguments, following Microsoft's [Run registry documentation](https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys). An Unknown status means DevTools could not determine whether Windows has enabled the entry. Refresh warnings identify sources that could not be inspected.
 

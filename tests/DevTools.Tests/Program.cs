@@ -99,6 +99,7 @@ internal static class Program
             IntegrationTests.RunAll(artifacts, Run);
             StartSearchTests.RunAll(artifacts, Run);
             WindowsPreferencesTests.RunAll(artifacts, Run);
+            StartupAppsTests.RunAll(artifacts, Run);
             PortableStorageTests.RunAll(artifacts, Run);
             WindowsControlTests.RunAll(artifacts, Run);
             UpdatePolicyTests.RunAll(artifacts, Run);
@@ -114,11 +115,11 @@ internal static class Program
             {
                 Check(shell.Selected.Id == "overview");
                 Check(shell.Sidebar.Select(n => n.Id).SequenceEqual(new[] { "overview", "apps", "developer-tools", "windows-preferences", "windows-tools" }));
-                Check(shell.Sidebar.Single(n => n.Id == "developer-tools").Children.Select(n => n.Id).SequenceEqual(new[] { "binaries", "environment-path", "sdks-runtimes" }));
+                Check(shell.Sidebar.Single(n => n.Id == "developer-tools").Children.Select(n => n.Id).SequenceEqual(new[] { "binaries" }));
                 var preferences = shell.Sidebar.Single(n => n.Id == "windows-preferences");
                 Check(preferences.Children.Select(n => n.Id).SequenceEqual(new[] { "start-search", "explorer-taskbar", "appearance-signin", "privacy-suggestions", "power-gaming", "developer-settings" }));
                 var windowsTools = shell.Sidebar.Single(n => n.Id == "windows-tools");
-                Check(windowsTools.Children.Select(n => n.Id).SequenceEqual(new[] { "user-folders", "windows-updates", "activation", "context-menu", "link-handlers" }));
+                Check(windowsTools.Children.Select(n => n.Id).SequenceEqual(new[] { "user-folders", "windows-updates", "activation", "context-menu", "link-handlers", "startup-apps" }));
                 Check(shell.SettingsPage.Id == "settings" && !shell.Sidebar.Any(n => n.Id == "settings"));
                 Render(window, Path.Combine(artifacts, "workspace-startup.png"), 1180, 820);
             });
@@ -155,11 +156,10 @@ internal static class Program
             });
             Run("Every built-in module constructs and every page lays out", () =>
             {
-                Check(shell.Pages.Count == 17);
+                Check(shell.Pages.Count == 16);
                 Check(shell.Pages.Any(p => p.Id == "context-menu"));
                 Check(shell.Pages.Single(p => p.Id == "scoop").Group == "Apps Manager");
-                Check(shell.Pages.Single(p => p.Id == "environment-path").HasEnvironmentPathWorkspace);
-                Check(shell.Pages.Single(p => p.Id == "sdks-runtimes").HasSdkCatalogWorkspace);
+                Check(!shell.Pages.Any(p => p.Id is "environment-path" or "sdks-runtimes"));
                 var contextPage = shell.Pages.Single(p => p.Id == "context-menu");
                 Check(contextPage.Browser!.CatalogNames.Contains("JetBrains Rider"));
                 foreach (var page in shell.Pages)
@@ -168,6 +168,28 @@ internal static class Program
                     Layout(window, 1180, 820);
                     Check(((FrameworkElement)window.Content).ActualWidth == 1180);
                 }
+            });
+            Run("Startup apps renders entries and add controls in dark, light and minimum sizes", () =>
+            {
+                var page = shell.Pages.Single(p => p.Id == "startup-apps");
+                var workspace = page.StartupAppsWorkspace!;
+                Check(!workspace.IsInitialized);
+                shell.Selected = page;
+                Render(window, Path.Combine(artifacts, "startup-apps-empty.png"), 1180, 820);
+                workspace.Items.Add(new("Editor", "HKCU Run (64-bit)", "Current user", "\"C:\\Program Files\\Editor\\Editor.exe\" --quiet", "Enabled (StartupApproved)", new(StartupEntryType.RegistryValue, StartupHive.CurrentUser, StartupView.Registry64, "Editor", StartupRegistryKind.String, "\"C:\\Program Files\\Editor\\Editor.exe\" --quiet")));
+                workspace.Items.Add(new("Updater", "HKLM Run (32-bit)", "All users", "\"C:\\Program Files (x86)\\Updater\\Update.exe\"", "Disabled (StartupApproved)", new(StartupEntryType.RegistryValue, StartupHive.LocalMachine, StartupView.Registry32, "Updater", StartupRegistryKind.String, "\"C:\\Program Files (x86)\\Updater\\Update.exe\"", Scope: StartupScope.AllUsers)));
+                workspace.SelectedItem = workspace.Items[0];
+                Check(workspace.RemoveAction!.IsEnabled);
+                workspace.IsInitialized = true;
+                workspace.Summary = "2 startup entries · registry Run keys and Startup folders";
+                workspace.SelectedExecutable = @"C:\Program Files\Editor\Editor.exe";
+                workspace.AppName = "Editor";
+                Render(window, Path.Combine(artifacts, "startup-apps-page.png"), 1180, 820);
+                Check(Descendants((FrameworkElement)window.Content).OfType<TextBlock>().Single(t => t.Name == "EmptyStartupMessage").Visibility == Visibility.Collapsed);
+                Render(window, Path.Combine(artifacts, "startup-apps-minimum.png"), 1024, 700);
+                uiContext.Save("settings.theme", "Light"); shell.ApplyTheme();
+                Render(window, Path.Combine(artifacts, "startup-apps-light.png"), 1180, 820);
+                uiContext.Save("settings.theme", "Dark"); shell.ApplyTheme();
             });
             Run("Developer binary inventory renders and filters in dark, light and minimum sizes", () =>
             {
@@ -185,30 +207,6 @@ internal static class Program
                 Render(window, Path.Combine(artifacts, "binaries-dark.png"), 1180, 820);
                 Render(window, Path.Combine(artifacts, "binaries-minimum.png"), 1024, 700);
                 uiContext.Save("settings.theme", "Light"); shell.ApplyTheme(); Render(window, Path.Combine(artifacts, "binaries-light.png"), 1180, 820);
-                uiContext.Save("settings.theme", "Dark"); shell.ApplyTheme();
-            });
-            Run("Environment and SDK inspectors render in dark, light and minimum sizes", () =>
-            {
-                var environmentPage = shell.Pages.Single(p => p.Id == "environment-path");
-                var environment = environmentPage.EnvironmentPathWorkspace!;
-                Check(environment.SelectedVariable?.Name.Equals("PATH", StringComparison.OrdinalIgnoreCase) == true);
-                Check(environment.PathEntries.Count > 0);
-                shell.Selected = environmentPage;
-                Render(window, Path.Combine(artifacts, "environment-path-dark.png"), 1180, 820);
-                Render(window, Path.Combine(artifacts, "environment-path-minimum.png"), 1024, 700);
-
-                var sdkPage = shell.Pages.Single(p => p.Id == "sdks-runtimes");
-                var sdk = sdkPage.SdkCatalogWorkspace!;
-                WaitForUi(() => sdk.Ecosystems.Count == 5 && sdk.DotnetSdks.Count > 0 && sdk.DotnetRuntimes.Count > 0, TimeSpan.FromSeconds(15));
-                Check(sdk.Ecosystems.Count == 5 && sdk.SelectedEcosystem?.Name == ".NET");
-                Check(sdk.DotnetSdks.Count > 0 && sdk.SdkDetails.Contains(sdk.DotnetSdks[0].Version));
-                Check(sdk.DotnetRuntimes.Count > 0 && sdk.RuntimeDetails.Contains(sdk.DotnetRuntimes[0].Version));
-                Check(sdk.HostVersion != "Not detected" && sdk.Architecture != "—" && sdk.Rid != "—");
-                shell.Selected = sdkPage;
-                Render(window, Path.Combine(artifacts, "sdk-catalog-dark.png"), 1180, 820);
-                Render(window, Path.Combine(artifacts, "sdk-catalog-minimum.png"), 1024, 700);
-                uiContext.Save("settings.theme", "Light"); shell.ApplyTheme();
-                Render(window, Path.Combine(artifacts, "sdk-catalog-light.png"), 1180, 820);
                 uiContext.Save("settings.theme", "Dark"); shell.ApplyTheme();
             });
             shell.Selected = shell.SettingsPage;

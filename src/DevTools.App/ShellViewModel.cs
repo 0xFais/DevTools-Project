@@ -1,4 +1,4 @@
-using DevTools.Contracts;
+﻿using DevTools.Contracts;
 using DevTools.Infrastructure;
 using DevTools.Modules;
 using System.Collections.ObjectModel;
@@ -41,6 +41,7 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
             foreach (var node in Sidebar) node.Reveal(value.Id);
             Raise(nameof(IsSettingsSelected));
             if (autoRefresh && value.WindowsWorkspace is { IsInitialized: false, RefreshAction: { } refresh } && refresh.CanExecute(null)) refresh.Execute(null);
+            if (autoRefresh && value.StartupAppsWorkspace is { IsInitialized: false, RefreshAction: { } startupRefresh } && startupRefresh.CanExecute(null)) startupRefresh.Execute(null);
         }
     }
     public string Activity
@@ -91,8 +92,6 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         var apps = Group("apps", "Apps Manager"); apps.Children.Add(Leaf("scoop")); Sidebar.Add(apps);
         var developer = Group("developer-tools", "Developer Tools");
         developer.Children.Add(Leaf("binaries"));
-        developer.Children.Add(Leaf("environment-path"));
-        developer.Children.Add(Leaf("sdks-runtimes"));
         Sidebar.Add(developer);
         var preferences = Group("windows-preferences", "Windows Preferences"); preferences.Children.Add(Leaf("start-search"));
         foreach (var page in DevTools.Modules.Windows.WindowsPreferencesModule.Pages) preferences.Children.Add(Leaf(page.Id));
