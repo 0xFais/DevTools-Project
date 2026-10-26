@@ -1,4 +1,4 @@
-﻿using DevTools.Contracts;
+using DevTools.Contracts;
 using DevTools.Infrastructure;
 using DevTools.Modules;
 using DevTools.Modules.Integrations;
@@ -199,6 +199,7 @@ internal static class Program
 
                 var sdkPage = shell.Pages.Single(p => p.Id == "sdks-runtimes");
                 var sdk = sdkPage.SdkCatalogWorkspace!;
+                WaitForUi(() => sdk.Ecosystems.Count == 5 && sdk.DotnetSdks.Count > 0 && sdk.DotnetRuntimes.Count > 0, TimeSpan.FromSeconds(15));
                 Check(sdk.Ecosystems.Count == 5 && sdk.SelectedEcosystem?.Name == ".NET");
                 Check(sdk.DotnetSdks.Count > 0 && sdk.SdkDetails.Contains(sdk.DotnetSdks[0].Version));
                 Check(sdk.DotnetRuntimes.Count > 0 && sdk.RuntimeDetails.Contains(sdk.DotnetRuntimes[0].Version));
@@ -348,6 +349,23 @@ internal static class Program
     {
         if (!condition)
             throw new InvalidOperationException("Assertion failed.");
+    }
+    private static void WaitForUi(Func<bool> condition, TimeSpan timeout)
+    {
+        var frame = new DispatcherFrame();
+        var deadline = DateTime.UtcNow + timeout;
+        var timer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(50) };
+        timer.Tick += (_, _) =>
+        {
+            if (condition() || DateTime.UtcNow >= deadline)
+            {
+                timer.Stop();
+                frame.Continue = false;
+            }
+        };
+        timer.Start();
+        Dispatcher.PushFrame(frame);
+        Check(condition());
     }
     private static void Throws<T>(Action action) where T : Exception
     {
