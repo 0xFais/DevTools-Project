@@ -1,0 +1,471 @@
+[
+  {
+    "Id": "code",
+    "Name": "Visual Studio Code",
+    "Exe": "Code.exe",
+    "Mode": "editor",
+    "Key": "VSCode"
+  },
+  {
+    "Id": "vscodium",
+    "Name": "VSCodium",
+    "Exe": "VSCodium.exe",
+    "Mode": "editor",
+    "Key": "VSCodium"
+  },
+  {
+    "Id": "cursor",
+    "Name": "Cursor",
+    "Exe": "Cursor.exe",
+    "Mode": "editor",
+    "Key": "Cursor"
+  },
+  {
+    "Id": "windsurf",
+    "Name": "Windsurf",
+    "Exe": "Windsurf.exe",
+    "Mode": "editor",
+    "Key": "Windsurf"
+  },
+  {
+    "Id": "zed",
+    "Name": "Zed",
+    "Exe": "Zed.exe",
+    "Mode": "editor",
+    "Key": "Zed"
+  },
+  {
+    "Id": "sublime",
+    "Name": "Sublime Text",
+    "Exe": "sublime_text.exe",
+    "Mode": "editor",
+    "Key": "SublimeText"
+  },
+  {
+    "Id": "notepadpp",
+    "Name": "Notepad++",
+    "Exe": "notepad++.exe",
+    "Mode": "editor",
+    "Key": "NotepadPP"
+  },
+  {
+    "Id": "notepad3",
+    "Name": "Notepad3",
+    "Exe": "Notepad3.exe",
+    "Mode": "editor",
+    "Key": "Notepad3"
+  },
+  {
+    "Id": "gvim",
+    "Name": "gVim",
+    "Exe": "gvim.exe",
+    "Mode": "editor",
+    "Key": "GVim"
+  },
+  {
+    "Id": "emacs",
+    "Name": "Emacs",
+    "Exe": "runemacs.exe",
+    "Mode": "editor",
+    "Key": "Emacs"
+  },
+  {
+    "Id": "rider",
+    "Name": "JetBrains Rider",
+    "Exe": "rider64.exe",
+    "Mode": "editor",
+    "Key": "Rider"
+  },
+  {
+    "Id": "idea",
+    "Name": "IntelliJ IDEA",
+    "Exe": "idea64.exe",
+    "Mode": "editor",
+    "Key": "IntelliJ"
+  },
+  {
+    "Id": "pycharm",
+    "Name": "PyCharm",
+    "Exe": "pycharm64.exe",
+    "Mode": "editor",
+    "Key": "PyCharm"
+  },
+  {
+    "Id": "webstorm",
+    "Name": "WebStorm",
+    "Exe": "webstorm64.exe",
+    "Mode": "editor",
+    "Key": "WebStorm"
+  },
+  {
+    "Id": "clion",
+    "Name": "CLion",
+    "Exe": "clion64.exe",
+    "Mode": "editor",
+    "Key": "CLion"
+  },
+  {
+    "Id": "goland",
+    "Name": "GoLand",
+    "Exe": "goland64.exe",
+    "Mode": "editor",
+    "Key": "GoLand"
+  },
+  {
+    "Id": "phpstorm",
+    "Name": "PhpStorm",
+    "Exe": "phpstorm64.exe",
+    "Mode": "editor",
+    "Key": "PhpStorm"
+  },
+  {
+    "Id": "rubymine",
+    "Name": "RubyMine",
+    "Exe": "rubymine64.exe",
+    "Mode": "editor",
+    "Key": "RubyMine"
+  },
+  {
+    "Id": "datagrip",
+    "Name": "DataGrip",
+    "Exe": "datagrip64.exe",
+    "Mode": "editor",
+    "Key": "DataGrip"
+  },
+  {
+    "Id": "androidstudio",
+    "Name": "Android Studio",
+    "Exe": "studio64.exe",
+    "Mode": "editor",
+    "Key": "AndroidStudio"
+  },
+  {
+    "Id": "terminal",
+    "Name": "Windows Terminal",
+    "Exe": "wt.exe",
+    "Mode": "terminal",
+    "Key": "WindowsTerminalHere"
+  },
+  {
+    "Id": "pwsh",
+    "Name": "PowerShell 7",
+    "Exe": "pwsh.exe",
+    "Mode": "terminal",
+    "Key": "PowerShell7"
+  },
+  {
+    "Id": "gitbash",
+    "Name": "Git Bash",
+    "Exe": "git-bash.exe",
+    "Mode": "terminal",
+    "Key": "GitBash"
+  },
+  {
+    "Id": "wezterm",
+    "Name": "WezTerm",
+    "Exe": "wezterm-gui.exe",
+    "Mode": "terminal",
+    "Key": "WezTerm"
+  },
+  {
+    "Id": "alacritty",
+    "Name": "Alacritty",
+    "Exe": "alacritty.exe",
+    "Mode": "terminal",
+    "Key": "Alacritty"
+  },
+  {
+    "Id": "visualstudio",
+    "Name": "Visual Studio",
+    "Exe": "devenv.exe",
+    "Mode": "editor",
+    "Key": "VisualStudio"
+  },
+  {
+    "Id": "fleet",
+    "Name": "JetBrains Fleet",
+    "Exe": "fleet.exe",
+    "Mode": "editor",
+    "Key": "Fleet"
+  },
+  {
+    "Id": "zedpreview",
+    "Name": "Zed Preview",
+    "Exe": "Zed Preview.exe",
+    "Mode": "editor",
+    "Key": "ZedPreview"
+  },
+  {
+    "Id": "trae",
+    "Name": "Trae",
+    "Exe": "Trae.exe",
+    "Mode": "editor",
+    "Key": "Trae"
+  },
+  {
+    "Id": "antigravity",
+    "Name": "Antigravity",
+    "Exe": "Antigravity.exe",
+    "Mode": "editor",
+    "Key": "Antigravity"
+  },
+  {
+    "Id": "kiro",
+    "Name": "Kiro",
+    "Exe": "Kiro.exe",
+    "Mode": "editor",
+    "Key": "Kiro"
+  },
+  {
+    "Id": "positron",
+    "Name": "Positron",
+    "Exe": "Positron.exe",
+    "Mode": "editor",
+    "Key": "Positron"
+  },
+  {
+    "Id": "lapce",
+    "Name": "Lapce",
+    "Exe": "lapce.exe",
+    "Mode": "editor",
+    "Key": "Lapce"
+  },
+  {
+    "Id": "lite-xl",
+    "Name": "Lite XL",
+    "Exe": "lite-xl.exe",
+    "Mode": "editor",
+    "Key": "LiteXL"
+  },
+  {
+    "Id": "geany",
+    "Name": "Geany",
+    "Exe": "geany.exe",
+    "Mode": "editor",
+    "Key": "Geany"
+  },
+  {
+    "Id": "kate",
+    "Name": "Kate",
+    "Exe": "kate.exe",
+    "Mode": "editor",
+    "Key": "Kate"
+  },
+  {
+    "Id": "micro",
+    "Name": "Micro",
+    "Exe": "micro.exe",
+    "Mode": "terminal",
+    "Key": "Micro"
+  },
+  {
+    "Id": "neovim",
+    "Name": "Neovim",
+    "Exe": "nvim-qt.exe",
+    "Mode": "editor",
+    "Key": "NeovimQt"
+  },
+  {
+    "Id": "hbuilderx",
+    "Name": "HBuilderX",
+    "Exe": "HBuilderX.exe",
+    "Mode": "editor",
+    "Key": "HBuilderX"
+  },
+  {
+    "Id": "eclipse",
+    "Name": "Eclipse",
+    "Exe": "eclipse.exe",
+    "Mode": "editor",
+    "Key": "Eclipse"
+  },
+  {
+    "Id": "netbeans",
+    "Name": "Apache NetBeans",
+    "Exe": "netbeans64.exe",
+    "Mode": "editor",
+    "Key": "NetBeans"
+  },
+  {
+    "Id": "atom",
+    "Name": "Atom",
+    "Exe": "atom.exe",
+    "Mode": "editor",
+    "Key": "Atom"
+  },
+  {
+    "Id": "brackets",
+    "Name": "Brackets",
+    "Exe": "Brackets.exe",
+    "Mode": "editor",
+    "Key": "Brackets"
+  },
+  {
+    "Id": "codeinsiders",
+    "Name": "VS Code Insiders",
+    "Exe": "Code - Insiders.exe",
+    "Mode": "editor",
+    "Key": "VSCodeInsiders"
+  },
+  {
+    "Id": "codeoss",
+    "Name": "Code - OSS",
+    "Exe": "Code - OSS.exe",
+    "Mode": "editor",
+    "Key": "CodeOSS"
+  },
+  {
+    "Id": "codiuminsiders",
+    "Name": "VSCodium Insiders",
+    "Exe": "VSCodium - Insiders.exe",
+    "Mode": "editor",
+    "Key": "VSCodiumInsiders"
+  },
+  {
+    "Id": "liteide",
+    "Name": "LiteIDE",
+    "Exe": "liteide.exe",
+    "Mode": "editor",
+    "Key": "LiteIDE"
+  },
+  {
+    "Id": "qtcreator",
+    "Name": "Qt Creator",
+    "Exe": "qtcreator.exe",
+    "Mode": "editor",
+    "Key": "QtCreator"
+  },
+  {
+    "Id": "sublimemerge",
+    "Name": "Sublime Merge",
+    "Exe": "sublime_merge.exe",
+    "Mode": "editor",
+    "Key": "SublimeMerge"
+  },
+  {
+    "Id": "fork",
+    "Name": "Fork",
+    "Exe": "Fork.exe",
+    "Mode": "editor",
+    "Key": "Fork"
+  },
+  {
+    "Id": "gitkraken",
+    "Name": "GitKraken",
+    "Exe": "gitkraken.exe",
+    "Mode": "editor",
+    "Key": "GitKraken"
+  },
+  {
+    "Id": "sourcetree",
+    "Name": "Sourcetree",
+    "Exe": "SourceTree.exe",
+    "Mode": "editor",
+    "Key": "SourceTree"
+  },
+  {
+    "Id": "tortoisegit",
+    "Name": "TortoiseGit",
+    "Exe": "TortoiseGitProc.exe",
+    "Mode": "editor",
+    "Key": "TortoiseGit"
+  },
+  {
+    "Id": "githubdesktop",
+    "Name": "GitHub Desktop",
+    "Exe": "GitHubDesktop.exe",
+    "Mode": "editor",
+    "Key": "GitHubDesktop"
+  },
+  {
+    "Id": "postman",
+    "Name": "Postman",
+    "Exe": "Postman.exe",
+    "Mode": "editor",
+    "Key": "Postman"
+  },
+  {
+    "Id": "insomnia",
+    "Name": "Insomnia",
+    "Exe": "Insomnia.exe",
+    "Mode": "editor",
+    "Key": "Insomnia"
+  },
+  {
+    "Id": "dbeaver",
+    "Name": "DBeaver",
+    "Exe": "dbeaver.exe",
+    "Mode": "editor",
+    "Key": "DBeaver"
+  },
+  {
+    "Id": "beekeeper",
+    "Name": "Beekeeper Studio",
+    "Exe": "Beekeeper Studio.exe",
+    "Mode": "editor",
+    "Key": "BeekeeperStudio"
+  },
+  {
+    "Id": "tableplus",
+    "Name": "TablePlus",
+    "Exe": "TablePlus.exe",
+    "Mode": "editor",
+    "Key": "TablePlus"
+  },
+  {
+    "Id": "warp",
+    "Name": "Warp",
+    "Exe": "Warp.exe",
+    "Mode": "terminal",
+    "Key": "Warp"
+  },
+  {
+    "Id": "tabby",
+    "Name": "Tabby",
+    "Exe": "Tabby.exe",
+    "Mode": "terminal",
+    "Key": "Tabby"
+  },
+  {
+    "Id": "hyper",
+    "Name": "Hyper",
+    "Exe": "Hyper.exe",
+    "Mode": "terminal",
+    "Key": "Hyper"
+  },
+  {
+    "Id": "cmder",
+    "Name": "Cmder",
+    "Exe": "Cmder.exe",
+    "Mode": "terminal",
+    "Key": "Cmder"
+  },
+  {
+    "Id": "conemu",
+    "Name": "ConEmu",
+    "Exe": "ConEmu64.exe",
+    "Mode": "terminal",
+    "Key": "ConEmu"
+  },
+  {
+    "Id": "mintty",
+    "Name": "mintty",
+    "Exe": "mintty.exe",
+    "Mode": "terminal",
+    "Key": "Mintty"
+  },
+  {
+    "Id": "fluentterminal",
+    "Name": "Fluent Terminal",
+    "Exe": "FluentTerminal.exe",
+    "Mode": "terminal",
+    "Key": "FluentTerminal"
+  },
+  {
+    "Id": "wsl",
+    "Name": "WSL",
+    "Exe": "wsl.exe",
+    "Mode": "terminal",
+    "Key": "WSL"
+  }
+]

@@ -1,4 +1,4 @@
-# DevTools Studio
+﻿# DevTools Studio
 
 A native C# / WPF app for managing Windows and development tools. The Developer
 Studio interface starts in dark mode, requests administrator access at startup,

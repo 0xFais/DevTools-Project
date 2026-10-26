@@ -1,0 +1,1 @@
+<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><EnableDynamicLoading>true</EnableDynamicLoading></PropertyGroup><ItemGroup><ProjectReference Include="../../src/DevTools.Contracts/DevTools.Contracts.csproj"><Private>false</Private><ExcludeAssets>runtime</ExcludeAssets></ProjectReference><None Include="extension.json" CopyToOutputDirectory="PreserveNewest" /></ItemGroup></Project>

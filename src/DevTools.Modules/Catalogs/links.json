@@ -1,0 +1,182 @@
+[
+  {
+    "Id": "fdm",
+    "Name": "Free Download Manager",
+    "Exe": "fdm.exe",
+    "Scheme": "magnet"
+  },
+  {
+    "Id": "qbittorrent",
+    "Name": "qBittorrent",
+    "Exe": "qbittorrent.exe",
+    "Scheme": "magnet"
+  },
+  {
+    "Id": "transmission",
+    "Name": "Transmission",
+    "Exe": "transmission-qt.exe",
+    "Scheme": "magnet"
+  },
+  {
+    "Id": "deluge",
+    "Name": "Deluge",
+    "Exe": "deluge.exe",
+    "Scheme": "magnet"
+  },
+  {
+    "Id": "biglybt",
+    "Name": "BiglyBT",
+    "Exe": "BiglyBT.exe",
+    "Scheme": "magnet"
+  },
+  {
+    "Id": "vuze",
+    "Name": "Vuze",
+    "Exe": "Azureus.exe",
+    "Scheme": "magnet"
+  },
+  {
+    "Id": "tixati",
+    "Name": "Tixati",
+    "Exe": "tixati.exe",
+    "Scheme": "magnet"
+  },
+  {
+    "Id": "picotorrent",
+    "Name": "PicoTorrent",
+    "Exe": "PicoTorrent.exe",
+    "Scheme": "magnet"
+  },
+  {
+    "Id": "webtorrent",
+    "Name": "WebTorrent Desktop",
+    "Exe": "WebTorrent.exe",
+    "Scheme": "magnet"
+  },
+  {
+    "Id": "tribler",
+    "Name": "Tribler",
+    "Exe": "tribler.exe",
+    "Scheme": "magnet"
+  },
+  {
+    "Id": "utorrent",
+    "Name": "uTorrent",
+    "Exe": "uTorrent.exe",
+    "Scheme": "magnet"
+  },
+  {
+    "Id": "bittorrent",
+    "Name": "BitTorrent",
+    "Exe": "BitTorrent.exe",
+    "Scheme": "magnet"
+  },
+  {
+    "Id": "telegram",
+    "Name": "Telegram Desktop",
+    "Exe": "Telegram.exe",
+    "Scheme": "tg"
+  },
+  {
+    "Id": "steam",
+    "Name": "Steam",
+    "Exe": "steam.exe",
+    "Scheme": "steam"
+  },
+  {
+    "Id": "discord",
+    "Name": "Discord",
+    "Exe": "Discord.exe",
+    "Scheme": "discord"
+  },
+  {
+    "Id": "obsidian",
+    "Name": "Obsidian",
+    "Exe": "Obsidian.exe",
+    "Scheme": "obsidian"
+  },
+  {
+    "Id": "vscode",
+    "Name": "Visual Studio Code",
+    "Exe": "Code.exe",
+    "Scheme": "vscode"
+  },
+  {
+    "Id": "vscodeinsiders",
+    "Name": "VS Code Insiders",
+    "Exe": "Code - Insiders.exe",
+    "Scheme": "vscode-insiders"
+  },
+  {
+    "Id": "vscodium",
+    "Name": "VSCodium",
+    "Exe": "VSCodium.exe",
+    "Scheme": "vscodium"
+  },
+  {
+    "Id": "cursor",
+    "Name": "Cursor",
+    "Exe": "Cursor.exe",
+    "Scheme": "cursor"
+  },
+  {
+    "Id": "windsurf",
+    "Name": "Windsurf",
+    "Exe": "Windsurf.exe",
+    "Scheme": "windsurf"
+  },
+  {
+    "Id": "spotify",
+    "Name": "Spotify",
+    "Exe": "Spotify.exe",
+    "Scheme": "spotify"
+  },
+  {
+    "Id": "zoom",
+    "Name": "Zoom",
+    "Exe": "Zoom.exe",
+    "Scheme": "zoommtg"
+  },
+  {
+    "Id": "slack",
+    "Name": "Slack",
+    "Exe": "slack.exe",
+    "Scheme": "slack"
+  },
+  {
+    "Id": "notion",
+    "Name": "Notion",
+    "Exe": "Notion.exe",
+    "Scheme": "notion"
+  },
+  {
+    "Id": "figma",
+    "Name": "Figma",
+    "Exe": "Figma.exe",
+    "Scheme": "figma"
+  },
+  {
+    "Id": "postman",
+    "Name": "Postman",
+    "Exe": "Postman.exe",
+    "Scheme": "postman"
+  },
+  {
+    "Id": "epic",
+    "Name": "Epic Games Launcher",
+    "Exe": "EpicGamesLauncher.exe",
+    "Scheme": "com.epicgames.launcher"
+  },
+  {
+    "Id": "battle",
+    "Name": "Battle.net",
+    "Exe": "Battle.net.exe",
+    "Scheme": "battlenet"
+  },
+  {
+    "Id": "roblox",
+    "Name": "Roblox Player",
+    "Exe": "RobloxPlayerBeta.exe",
+    "Scheme": "roblox-player"
+  }
+]

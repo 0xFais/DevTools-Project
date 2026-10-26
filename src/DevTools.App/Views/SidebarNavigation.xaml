@@ -1,0 +1,36 @@
+<UserControl x:Class="DevTools.App.Views.SidebarNavigation" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:DevTools.App">
+ <UserControl.Resources>
+  <HierarchicalDataTemplate DataType="{x:Type local:NavigationNode}" ItemsSource="{Binding Children}">
+   <StackPanel Orientation="Horizontal">
+    <TextBlock x:Name="icon" Text="{Binding Icon}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="14" Width="24" VerticalAlignment="Center"/>
+    <TextBlock x:Name="label" Text="{Binding Title}" FontSize="12" VerticalAlignment="Center"/>
+   </StackPanel>
+   <HierarchicalDataTemplate.Triggers><DataTrigger Binding="{Binding IsGroup}" Value="True"><Setter TargetName="icon" Property="Visibility" Value="Collapsed"/><Setter TargetName="label" Property="FontSize" Value="12"/><Setter TargetName="label" Property="FontWeight" Value="SemiBold"/></DataTrigger><DataTrigger Binding="{Binding Id}" Value="integrations"><Setter TargetName="label" Property="FontWeight" Value="Normal"/></DataTrigger></HierarchicalDataTemplate.Triggers>
+  </HierarchicalDataTemplate>
+  <Style TargetType="TreeViewItem">
+   <Setter Property="IsExpanded" Value="{Binding IsExpanded,Mode=TwoWay}"/><Setter Property="IsSelected" Value="{Binding IsSelected,Mode=TwoWay}"/>
+   <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+   <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TreeViewItem">
+    <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+     <Border x:Name="row" CornerRadius="6" Background="Transparent" BorderBrush="{DynamicResource LineBrush}" Margin="0,1" Padding="11,10,8,10" PreviewMouseLeftButtonDown="ToggleGroup">
+      <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+       <ToggleButton x:Name="expander" Grid.Column="1" Width="18" Visibility="Collapsed" IsChecked="{Binding IsExpanded,RelativeSource={RelativeSource TemplatedParent},Mode=TwoWay}" Focusable="False" Background="Transparent" BorderThickness="0" Foreground="{DynamicResource MutedBrush}">
+        <ToggleButton.Template><ControlTemplate TargetType="ToggleButton"><TextBlock x:Name="arrow" Text="›" FontSize="14" VerticalAlignment="Center" HorizontalAlignment="Center" Foreground="{TemplateBinding Foreground}"/><ControlTemplate.Triggers><Trigger Property="IsChecked" Value="True"><Setter TargetName="arrow" Property="Text" Value="⌄"/></Trigger></ControlTemplate.Triggers></ControlTemplate></ToggleButton.Template>
+       </ToggleButton>
+       <ContentPresenter ContentSource="Header" HorizontalAlignment="Stretch"/>
+      </Grid>
+     </Border>
+     <ItemsPresenter x:Name="children" Grid.Row="1" Margin="12,4,0,0" Visibility="Collapsed"/>
+    </Grid>
+    <ControlTemplate.Triggers>
+     <Trigger Property="HasItems" Value="True"><Setter TargetName="expander" Property="Visibility" Value="Visible"/><Setter TargetName="row" Property="CornerRadius" Value="8"/><Setter TargetName="row" Property="Background" Value="{DynamicResource PanelBackground}"/><Setter TargetName="row" Property="BorderThickness" Value="1"/><Setter TargetName="row" Property="Padding" Value="11,9,8,9"/><Setter TargetName="row" Property="Margin" Value="0,12,0,3"/><Setter TargetName="row" Property="Cursor" Value="Hand"/></Trigger>
+     <DataTrigger Binding="{Binding Id}" Value="integrations"><Setter TargetName="row" Property="Background" Value="Transparent"/><Setter TargetName="row" Property="BorderThickness" Value="0"/><Setter TargetName="row" Property="Margin" Value="0,2,0,1"/><Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/></DataTrigger>
+     <Trigger Property="IsExpanded" Value="True"><Setter TargetName="children" Property="Visibility" Value="Visible"/></Trigger>
+     <MultiTrigger><MultiTrigger.Conditions><Condition Property="IsSelected" Value="True"/><Condition Property="HasItems" Value="False"/></MultiTrigger.Conditions><Setter TargetName="row" Property="Background" Value="{DynamicResource SelectionBrush}"/><Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/></MultiTrigger>
+     <Trigger SourceName="row" Property="IsMouseOver" Value="True"><Setter TargetName="row" Property="Background" Value="{DynamicResource SelectionBrush}"/></Trigger>
+    </ControlTemplate.Triggers>
+   </ControlTemplate></Setter.Value></Setter>
+  </Style>
+ </UserControl.Resources>
+ <TreeView x:Name="NavigationTree" ItemsSource="{Binding Sidebar}" SelectedItemChanged="Navigate" Background="Transparent" Foreground="{DynamicResource TextBrush}" BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="Workspace navigation"/>
+</UserControl>

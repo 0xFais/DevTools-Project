@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="DevTools Studio logo">
+  <defs><linearGradient id="accent" x1="120" y1="90" x2="400" y2="420" gradientUnits="userSpaceOnUse"><stop stop-color="#DDD6FF"/><stop offset="1" stop-color="#8C73F5"/></linearGradient></defs>
+  <rect x="12" y="12" width="488" height="488" rx="104" fill="#141720"/>
+  <path d="M256 84 428 256 256 428 84 256Z" fill="none" stroke="url(#accent)" stroke-width="25" stroke-linejoin="round"/>
+  <path d="m214 202-54 54 54 54m84-108 54 54-54 54" fill="none" stroke="#F1EEFF" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="m274 220-36 72" stroke="#B4A3FF" stroke-width="18" stroke-linecap="round"/>
+</svg>

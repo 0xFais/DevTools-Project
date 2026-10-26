@@ -1,0 +1,65 @@
+{
+  "source": "https://github.com/ChrisTitusTech/winutil",
+  "commit": "2f0bdc8fca52e1ebe31a8d98216428061d3f8956",
+  "license": "MIT",
+  "tweaks": {
+    "WPFToggleBingSearch": {
+      "Content": "Start Menu Bing Search",
+      "Description": "Toggles Bing web search results in Windows Search.",
+      "category": "Customize Preferences",
+      "panel": "2",
+      "Type": "Toggle",
+      "registry": [
+        {
+          "Path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Search",
+          "Name": "BingSearchEnabled",
+          "Value": "1",
+          "Type": "DWord",
+          "OriginalValue": "0",
+          "DefaultState": "true"
+        }
+      ],
+      "link": "https://winutil.christitus.com/code-reference/tweaks/customize-preferences/bingsearch"
+    },
+    "WPFToggleStartMenuRecommendations": {
+      "Content": "Start Menu Recommendations",
+      "Description": "Toggles the recommendations section in the Start Menu. WARNING: This will also disable Windows Spotlight on your Lock Screen as a side effect.",
+      "category": "Customize Preferences",
+      "panel": "2",
+      "Type": "Toggle",
+      "registry": [
+        {
+          "Path": "HKLM:\\SOFTWARE\\Microsoft\\PolicyManager\\current\\device\\Start",
+          "Name": "HideRecommendedSection",
+          "Value": "0",
+          "Type": "DWord",
+          "OriginalValue": "1",
+          "DefaultState": "true"
+        },
+        {
+          "Path": "HKLM:\\SOFTWARE\\Microsoft\\PolicyManager\\current\\device\\Education",
+          "Name": "IsEducationEnvironment",
+          "Value": "0",
+          "Type": "DWord",
+          "OriginalValue": "1",
+          "DefaultState": "true"
+        },
+        {
+          "Path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Explorer",
+          "Name": "HideRecommendedSection",
+          "Value": "0",
+          "Type": "DWord",
+          "OriginalValue": "1",
+          "DefaultState": "true"
+        }
+      ],
+      "InvokeScript": [
+        "\n      Invoke-WinUtilExplorerUpdate -action \"restart\"\n      "
+      ],
+      "UndoScript": [
+        "\n      Invoke-WinUtilExplorerUpdate -action \"restart\"\n      "
+      ],
+      "link": "https://winutil.christitus.com/code-reference/tweaks/customize-preferences/startmenurecommendations"
+    }
+  }
+}

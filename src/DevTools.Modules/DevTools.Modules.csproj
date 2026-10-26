@@ -1,0 +1,1 @@
+<Project Sdk="Microsoft.NET.Sdk"><ItemGroup><ProjectReference Include="../DevTools.Contracts/DevTools.Contracts.csproj" /><ProjectReference Include="../DevTools.Infrastructure/DevTools.Infrastructure.csproj" /></ItemGroup><ItemGroup><None Include="Catalogs/*.json" CopyToOutputDirectory="PreserveNewest" /></ItemGroup></Project>

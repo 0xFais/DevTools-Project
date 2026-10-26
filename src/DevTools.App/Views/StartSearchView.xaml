@@ -1,0 +1,38 @@
+<UserControl x:Class="DevTools.App.Views.StartSearchView" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:DevTools.App" Loaded="LoadedView" DataContextChanged="ContextChanged">
+ <UserControl.Resources>
+  <local:InverseBooleanConverter x:Key="NotBusy"/>
+  <Style x:Key="Switch" TargetType="CheckBox">
+   <Setter Property="VerticalAlignment" Value="Center"/><Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+   <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="CheckBox"><StackPanel Orientation="Horizontal" Background="Transparent">
+    <Border x:Name="track" Width="38" Height="22" CornerRadius="11" BorderThickness="1" BorderBrush="{DynamicResource MutedBrush}" Background="{DynamicResource SidebarBackground}"><Ellipse x:Name="thumb" Width="14" Height="14" HorizontalAlignment="Left" Fill="{DynamicResource MutedBrush}" Margin="3,0"/></Border>
+    <TextBlock x:Name="label" Text="Off" Margin="8,0,0,0" VerticalAlignment="Center" Width="24"/>
+   </StackPanel><ControlTemplate.Triggers>
+    <Trigger Property="IsChecked" Value="True"><Setter TargetName="track" Property="Background" Value="{DynamicResource AccentBrush}"/><Setter TargetName="track" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/><Setter TargetName="thumb" Property="Fill" Value="{DynamicResource AppBackground}"/><Setter TargetName="thumb" Property="HorizontalAlignment" Value="Right"/><Setter TargetName="label" Property="Text" Value="On"/></Trigger>
+    <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>
+    <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="track" Property="BorderThickness" Value="2"/></Trigger>
+   </ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
+  </Style>
+ </UserControl.Resources>
+ <StackPanel DataContext="{Binding StartSearchWorkspace}" IsEnabled="{Binding DataContext.IsBusy,RelativeSource={RelativeSource AncestorType=Window},Converter={StaticResource NotBusy}}">
+  <DockPanel Margin="0,0,0,16"><Button Content="Check current settings" Command="{Binding CheckAction}" DockPanel.Dock="Right" Padding="12,8" FontSize="12" Margin="12,0,0,0"/><StackPanel VerticalAlignment="Center"><TextBlock Text="Chris Titus Tech WinUtil method" Foreground="{DynamicResource MutedBrush}" FontSize="11"/><TextBlock Text="{Binding Platform}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/></StackPanel></DockPanel>
+  <Border Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" CornerRadius="10">
+   <StackPanel>
+    <Grid Margin="20"><Grid.ColumnDefinitions><ColumnDefinition Width="30"/><ColumnDefinition Width="*"/><ColumnDefinition Width="85"/></Grid.ColumnDefinitions>
+     <TextBlock Text="&#xE721;" FontFamily="Segoe MDL2 Assets" Foreground="{DynamicResource AccentBrush}" FontSize="18" Margin="0,2,0,0"/>
+     <StackPanel Grid.Column="1" Margin="8,0,16,0"><TextBlock Text="Disable Bing web search" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap"/><TextBlock Text="Search your apps, files and settings without Bing web results." Foreground="{DynamicResource MutedBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,7,0,0"/><TextBlock Text="{Binding BingHint}" Foreground="{DynamicResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0"/><TextBlock Text="{Binding BingState}" FontSize="11" TextWrapping="Wrap" Margin="0,10,0,0"/></StackPanel>
+     <CheckBox Grid.Column="2" x:Name="BingSwitch" Style="{StaticResource Switch}" IsChecked="{Binding DisableBing}" IsEnabled="{Binding CanChangeBing}" AutomationProperties.Name="Disable Bing web search"/>
+    </Grid>
+    <Border BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0"/>
+    <Grid Margin="20"><Grid.ColumnDefinitions><ColumnDefinition Width="30"/><ColumnDefinition Width="*"/><ColumnDefinition Width="85"/></Grid.ColumnDefinitions>
+     <TextBlock Text="&#xE8A9;" FontFamily="Segoe MDL2 Assets" Foreground="{DynamicResource AccentBrush}" FontSize="18" Margin="0,2,0,0"/>
+     <StackPanel Grid.Column="1" Margin="8,0,16,0"><TextBlock Text="Disable Recommended section" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap"/><TextBlock Text="Remove the Recommended area showing recently added apps." Foreground="{DynamicResource MutedBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,7,0,0"/><TextBlock Text="{Binding RecommendationsHint}" Foreground="{DynamicResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0"/><TextBlock Text="{Binding RecommendationsState}" FontSize="11" TextWrapping="Wrap" Margin="0,10,0,0"/></StackPanel>
+     <CheckBox Grid.Column="2" x:Name="RecommendationsSwitch" Style="{StaticResource Switch}" IsChecked="{Binding DisableRecommendations}" IsEnabled="{Binding CanChangeRecommendations}" AutomationProperties.Name="Disable Recommended section"/>
+    </Grid>
+   </StackPanel>
+  </Border>
+  <TextBlock Text="{Binding Pending}" FontSize="11" Foreground="{DynamicResource MutedBrush}" Margin="0,15,0,10"/>
+  <WrapPanel><Button Content="Apply changes" Command="{Binding ApplyAction}" Style="{StaticResource PrimaryButton}" Margin="0,0,8,8"/><Button Content="Restore previous settings" Command="{Binding RestoreAction}" Margin="0,0,8,8"/><Button Content="Restart Explorer" Command="{Binding RestartAction}" Margin="0,0,8,8"/><Button Content="Open Start settings" Command="{Binding SettingsAction}" Margin="0,0,0,8"/></WrapPanel>
+  <TextBlock Text="{Binding Result}" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource MutedBrush}" Margin="0,9,0,0"/>
+  <TextBlock Text="{Binding DataContext.Status,RelativeSource={RelativeSource AncestorType=UserControl}}" TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource MutedBrush}" Margin="0,7,0,0"/>
+ </StackPanel>
+</UserControl>

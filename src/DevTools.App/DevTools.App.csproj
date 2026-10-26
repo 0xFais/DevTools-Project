@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>WinExe</OutputType><UseWPF>true</UseWPF><ApplicationManifest>app.manifest</ApplicationManifest><AssemblyName>DevTools</AssemblyName><ApplicationIcon>Assets/DevTools.ico</ApplicationIcon></PropertyGroup>
+  <ItemGroup><Resource Include="Assets/DevTools.ico"/><Resource Include="Assets/DevTools.png"/></ItemGroup>
+  <ItemGroup><ProjectReference Include="../DevTools.Modules/DevTools.Modules.csproj" /><ProjectReference Include="../DevTools.Infrastructure/DevTools.Infrastructure.csproj" /></ItemGroup>
+</Project>
