@@ -154,6 +154,40 @@ internal static class StartupAppsTests
             Throws<IOException>(() => StartupAppsService.ArchiveStartupFile(StartupAppsService.CaptureFileIdentity(stale, root), blockedData));
             Check(File.Exists(stale));
         });
+        run("Startup archives allow redirected data locations but reject links inside the archive", () =>
+        {
+            var fixture = Path.Combine(artifacts, "startup-junctions", Guid.NewGuid().ToString("N"));
+            var root = Path.Combine(fixture, "Startup");
+            var target = Path.Combine(fixture, "Target");
+            Directory.CreateDirectory(root); Directory.CreateDirectory(target);
+            var link = Path.Combine(fixture, "Redirected");
+            CreateJunction(link, target);
+            try
+            {
+                foreach (var data in new[] { link, Path.Combine(link, "Data") })
+                {
+                    var source = Path.Combine(root, "Allowed.lnk"); File.WriteAllText(source, "shortcut bytes");
+                    var result = StartupAppsService.ArchiveStartupFile(StartupAppsService.CaptureFileIdentity(source, root), data);
+                    Check(!File.Exists(source) && File.ReadAllText(result.ArchivePath) == "shortcut bytes");
+                }
+            }
+            finally { Directory.Delete(link); }
+
+            foreach (var child in new[] { "StartupApps", Path.Combine("StartupApps", "Removed") })
+            {
+                var data = Path.Combine(fixture, Guid.NewGuid().ToString("N"));
+                var archiveLink = Path.Combine(data, child);
+                Directory.CreateDirectory(Path.GetDirectoryName(archiveLink)!);
+                CreateJunction(archiveLink, target);
+                try
+                {
+                    var source = Path.Combine(root, "Blocked.lnk"); File.WriteAllText(source, "preserved");
+                    Throws<IOException>(() => StartupAppsService.ArchiveStartupFile(StartupAppsService.CaptureFileIdentity(source, root), data));
+                    Check(File.ReadAllText(source) == "preserved");
+                }
+                finally { Directory.Delete(archiveLink); }
+            }
+        });
         run("Browse selects a validated executable and a declined add never calls the backend", () =>
         {
             var path = Path.Combine(artifacts, "startup-apps", "My Tool.exe");
@@ -168,6 +202,15 @@ internal static class StartupAppsTests
             WaitForOperation(context);
             Check(backend.Adds == 0 && context.LastConfirmation.Contains("will not be run"));
         });
+    }
+
+    private static void CreateJunction(string link, string target)
+    {
+        var script = "$ErrorActionPreference = 'Stop'; New-Item -ItemType Junction -Path '" + link.Replace("'", "''") + "' -Target '" + target.Replace("'", "''") + "' | Out-Null";
+        var encoded = Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(script));
+        var result = DevTools.Infrastructure.ProcessRunner.RunAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-EncodedCommand", encoded], CancellationToken.None).GetAwaiter().GetResult();
+        if (result.ExitCode != 0) throw new IOException("Could not create junction fixture: " + result.Output);
+        Check((File.GetAttributes(link) & FileAttributes.ReparsePoint) != 0);
     }
 
     private sealed class FakeBackend : IStartupAppsBackend

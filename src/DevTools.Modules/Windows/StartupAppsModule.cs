@@ -59,7 +59,7 @@ public static class StartupAppsService
         var archiveRoot = CreateSafeArchiveRoot(dataDirectory);
         var directory = Path.Combine(archiveRoot, Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
-        EnsureNoReparsePath(directory);
+        EnsureNoReparsePath(directory, Path.GetFullPath(dataDirectory));
         var archivePath = Path.Combine(directory, Path.GetFileName(path));
         using var source = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
         var sourceInfo = new FileInfo(path);
@@ -88,10 +88,13 @@ public static class StartupAppsService
 
     internal static string CreateSafeArchiveRoot(string dataDirectory)
     {
-        var full = Path.GetFullPath(Path.Combine(dataDirectory, "StartupApps", "Removed"));
-        EnsureNoReparsePath(full);
+        // The configured data directory may live in a redirected profile or portable
+        // junction. Trust that location, but reject redirection inside our archive.
+        var dataRoot = Path.GetFullPath(dataDirectory);
+        var full = Path.Combine(dataRoot, "StartupApps", "Removed");
+        EnsureNoReparsePath(full, dataRoot);
         Directory.CreateDirectory(full);
-        EnsureNoReparsePath(full);
+        EnsureNoReparsePath(full, dataRoot);
         return full;
     }
 
@@ -121,15 +124,15 @@ public static class StartupAppsService
             throw new IOException("The Startup folder is a reparse point; the selected entry was left untouched.");
     }
 
-    private static void EnsureNoReparsePath(string path)
+    private static void EnsureNoReparsePath(string path, string? trustedRoot = null)
     {
-        var current = Path.GetPathRoot(path) ?? throw new IOException("The archive path has no root.");
+        var current = trustedRoot ?? Path.GetPathRoot(path) ?? throw new IOException("The archive path has no root.");
         foreach (var part in path[current.Length..].Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries))
         {
             current = Path.Combine(current, part);
             if (!Directory.Exists(current)) continue;
             if ((File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
-                throw new IOException("The startup archive path includes a reparse point; it was not used.");
+                throw new IOException($"The startup path includes a reparse point at '{current}'; it was not used.");
         }
     }
 
