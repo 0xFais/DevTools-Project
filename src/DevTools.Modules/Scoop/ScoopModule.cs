@@ -32,7 +32,10 @@ public sealed class ScoopController
     private readonly Progress<string> log;
     private List<ScoopPackage> all = [];
     private bool running;
+    private string loadedManifestRoot = "", loadedManifestPath = "", loadedManifestContents = "";
+    private Dictionary<string, string> formBaseline = new();
     private readonly ScoopSetupService setup;
+    private static bool IsBucketManifest(string root, string file) => ScoopService.Buckets(root).Any(b => { try { return string.Equals(ScoopBucketAuthoring.ManifestPath(root, b.Name, Path.GetFileNameWithoutExtension(file)), file, StringComparison.OrdinalIgnoreCase); } catch (Exception e) when (e is ArgumentException or IOException or UnauthorizedAccessException or InvalidOperationException) { return false; } });
     private string rulesFile => Path.Combine(c.DataDirectory, "scoop-paths.json");
     public ScoopController(ScoopWorkspace workspace, ModulePage page, IModuleContext context, IScoopSetupBackend? setupBackend = null)
     {
@@ -48,6 +51,7 @@ public sealed class ScoopController
         Add("Refresh", Refresh);
         Add("CheckSetup", Refresh);
         Add("AddScoopPath", async ct => { var root = Root(); await Confirm("Add Scoop to PATH", "Add " + Path.Combine(root, "shims") + " to your user PATH? Existing entries will be preserved. Newly opened terminals will recognize Scoop."); await setup.AddToPath(root, previous => c.Save("scoop.setup.pathBackup", previous), ct, log); await Refresh(ct); });
+        Add("PortableSetup", async ct => { var root = Root(); await Confirm("Set up portable Scoop on this PC", "Set the user SCOOP environment variable to " + root + " and add its shims folder to your user PATH? Previous values are backed up. PowerShell execution policy and global Git settings will not be changed."); await setup.ConfigurePortable(root, previous => c.Save("scoop.setup.pathBackup", previous), previous => c.Save("scoop.setup.scoopBackup", previous), ct, log); await Refresh(ct); });
         Add("BrowseInstallLocation", async ct => { if (await c.PickFolderAsync("Choose an empty folder for Scoop") is { } location) w.InstallLocation = location; });
         Add("InstallScoop", async ct =>
         {
@@ -65,38 +69,245 @@ public sealed class ScoopController
             var verb = action;
             w.Commands[action] = new Command(() =>
             {
-                var names = (w.Selection.Count > 0 ? w.Selection.ToArray() : w.Selected is { } selected ? [selected] : throw new InvalidOperationException("Select installed apps.")).Select(a => a.Name).ToArray(); var root = Path.GetFullPath(w.Root);
+                var packages = w.Selection.Count > 0 ? w.Selection.ToArray() : w.Selected is { } selected ? [selected] : throw new InvalidOperationException("Select installed apps.");
+                var names = packages.Select(a => ScoopService.SafeSegment(a.Name)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(); var root = Path.GetFullPath(w.Root);
                 Enqueue(verb, async ct => {
                     if (verb == "uninstall") await Confirm("Uninstall packages", string.Join(", ", names));
-                    await Run(root, [verb, .. names], ct); await Refresh(ct);
+                    if (!string.Equals(Path.GetFullPath(w.Root), root, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("The Scoop root changed while this operation was queued. Refresh and select packages again.");
+                    _ = ScoopService.Script(root, []);
+                    var installed = await Task.Run(() => ScoopService.Installed(root, ct), ct);
+                    var stale = packages.Where(p => !installed.Any(a => string.Equals(a.Name, p.Name, StringComparison.OrdinalIgnoreCase) && string.Equals(Path.GetFullPath(a.Directory), Path.GetFullPath(p.Directory), StringComparison.OrdinalIgnoreCase) && string.Equals(a.Version, p.Version, StringComparison.OrdinalIgnoreCase))).Select(p => p.Name).ToArray();
+                    if (stale.Length > 0) throw new InvalidOperationException("Installed packages changed since selection: " + string.Join(", ", stale) + ". Refresh and select them again.");
+                    try { await Run(root, [verb, .. names], ct); }
+                    catch { try { await Refresh(CancellationToken.None); } catch (Exception refreshError) { c.Log("Scoop", "Refresh after failure: " + refreshError.Message); } throw; }
+                    await Refresh(ct);
                     if (verb is "hold" or "unhold")
                     {
                         var expected = verb == "hold";
                         var failed = names.Where(n => n != "scoop" && all.FirstOrDefault(a => a.Name == n)?.Held != expected).ToArray();
                         if (failed.Length > 0) throw new IOException("Scoop did not confirm the requested hold state for: " + string.Join(", ", failed));
                     }
-                    else await SyncPaths(root, ct);
+                    else
+                    {
+                        var failed = names.Where(n => (all.Any(a => string.Equals(a.Name, n, StringComparison.OrdinalIgnoreCase))) == (verb == "uninstall")).ToArray();
+                        if (failed.Length > 0) throw new IOException("Scoop did not confirm the expected installed state for: " + string.Join(", ", failed));
+                        await SyncPaths(root, ct);
+                    }
                 });
             }, Error);
         }
         Add("Status", ct => Run(Root(), ["status"], ct));
+        w.Commands["UpdateSelectedPackages"] = new Command(() => {
+            var packages = w.UpdateSelection.ToArray();
+            if (packages.Length == 0) throw new InvalidOperationException("Select at least one package with an available update.");
+            if (packages.Any(p => p.Held)) throw new InvalidOperationException("Held packages cannot be updated. Allow updates first or remove them from the selection.");
+            foreach (var package in packages) ScoopService.SafeSegment(package.Name);
+            var root = Path.GetFullPath(w.Root);
+            Enqueue("Update selected packages", async ct => {
+                await Confirm("Update selected packages", "Update these packages?\n\n" + string.Join("\n", packages.Select(p => $"{p.Name}: {p.Version} → {p.AvailableVersion}")));
+                if (!string.Equals(Path.GetFullPath(w.Root), root, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("The Scoop root changed. Refresh and select packages again.");
+                var current = await Task.Run(() => ScoopService.Installed(root, ct), ct);
+                var stale = packages.Where(p => !current.Any(a => string.Equals(a.Name, p.Name, StringComparison.OrdinalIgnoreCase) && string.Equals(a.Version, p.Version, StringComparison.OrdinalIgnoreCase) && string.Equals(a.Directory, p.Directory, StringComparison.OrdinalIgnoreCase) && !a.Held && a.AvailableVersion == p.AvailableVersion && a.AvailableVersion.Length > 0)).Select(p => p.Name).ToArray();
+                if (stale.Length > 0) throw new InvalidOperationException("Package state changed: " + string.Join(", ", stale) + ". Refresh and select packages again.");
+                var results = new List<string>();
+                foreach (var package in packages)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    try
+                    {
+                        await Run(root, ["update", package.Name], ct);
+                        var installed = await Task.Run(() => ScoopService.Installed(root, ct), ct);
+                        var updated = installed.FirstOrDefault(a => string.Equals(a.Name, package.Name, StringComparison.OrdinalIgnoreCase));
+                        results.Add(updated is not null && string.Equals(updated.Version, package.AvailableVersion, StringComparison.OrdinalIgnoreCase) ? package.Name + ": updated to " + updated.Version : package.Name + ": unable to verify the expected version");
+                    }
+                    catch (OperationCanceledException) { w.UpdateCenterMessage = "Cancelled. " + string.Join("; ", results); try { await Refresh(CancellationToken.None); } catch (Exception e) { c.Log("Scoop", "Refresh after cancellation: " + e.Message); } throw; }
+                    catch (Exception e) { results.Add(package.Name + ": failed — " + e.Message); }
+                }
+                w.UpdateCenterMessage = string.Join("; ", results);
+                try { await Refresh(ct); await SyncPaths(root, ct); }
+                finally { c.Log("Scoop", w.UpdateCenterMessage); }
+                await c.ShowReportAsync("Package update results", string.Join("\n", results));
+            });
+        }, Error);
         Add("UpdateAll", async ct => { var root = Root(); await Run(root, ["update", "*"], ct); await Refresh(ct); await SyncPaths(root, ct); });
         Add("ResetAll", async ct => { await Confirm("Reset all apps", "Recreate shims, shortcuts and PATH entries for every Scoop app?"); await Run(Root(), ["reset", "*"], ct); await Refresh(ct); });
         Add("Cleanup", async ct => { await Confirm("Cleanup all old versions", "Remove old versions of every app? You cannot switch back to those versions afterward."); await Run(Root(), ["cleanup", "*"], ct); await Refresh(ct); });
         Add("Install", Install);
-        Add("Info", async ct => { var a = (active?.Search ?? w.SearchSelection.ToArray()).FirstOrDefault() ?? throw new InvalidOperationException("Select a search result."); await Run(Root(), ["info", a.Identity], ct); });
+        Add("Download", Download);
+        Add("Info", async ct => {
+            var a = (active?.Search ?? w.SearchSelection.ToArray()).FirstOrDefault() ?? throw new InvalidOperationException("Select a search result.");
+            var manifest = ScoopService.Read(a.ManifestPath);
+            var info = $"{a.Name} · {a.Version}\nBucket: {a.Bucket} · {a.Status}\n\n{a.Description}\n\nHomepage: {a.Homepage}\nLicense: {a.License}\nDependencies: {manifest["depends"]}\nDownload: {manifest["url"] ?? manifest["architecture"]}";
+            await c.ShowReportAsync("Package information · " + a.Name, info);
+        });
         Add("Details", Details);
         Add("SwitchVersion", async ct => { var a = One(); var version = ScoopService.SafeSegment(active?.Version ?? w.Version); if (!Directory.Exists(Path.Combine(a.Directory, version)) || version == "current") throw new ArgumentException("Choose an installed version."); await Confirm("Switch version", $"Reset {a.Name} to {version}?"); await Run(Root(), ["reset", a.Name + "@" + version], ct); await Refresh(ct); });
         Add("OpenFolder", ct => { c.Open(One().Directory); return Task.CompletedTask; });
         Add("Homepage", ct => { if (Uri.TryCreate(One().Homepage, UriKind.Absolute, out var uri) && uri.Scheme is "https" or "http") c.Open(uri.AbsoluteUri); else throw new InvalidOperationException("No HTTP homepage in this manifest."); return Task.CompletedTask; });
-        Add("AddBucket", async ct => { var name = ScoopService.SafeSegment((active?.BucketName ?? w.BucketName).Trim()); var args = new List<string> { "bucket", "add", name }; if (!string.IsNullOrWhiteSpace(active?.BucketUrl ?? w.BucketUrl)) { if (!Uri.TryCreate((active?.BucketUrl ?? w.BucketUrl).Trim(), UriKind.Absolute, out var uri) || uri.Scheme != "https") throw new ArgumentException("Use an HTTPS bucket repository URL."); args.Add(uri.AbsoluteUri); } await Confirm("Add bucket", string.Join(" ", args)); await Run(Root(), args, ct); await Refresh(ct); });
-        Add("RemoveBucket", async ct => { var names = (active?.Buckets ?? w.BucketSelection.ToArray()).Select(b => b.Name).ToArray(); if (names.Length == 0) throw new InvalidOperationException("Select a bucket."); await Confirm("Remove buckets", string.Join(", ", names)); foreach (var name in names) await Run(Root(), ["bucket", "rm", name], ct); await Refresh(ct); });
+        IReadOnlyList<ScoopGitHubRelease> releases = [];
+        w.PropertyChanged += (_, e) => {
+            if (e.PropertyName == nameof(ScoopWorkspace.SelectedGitHubRelease)) {
+                var release = releases.FirstOrDefault(r => r.ToString() == w.SelectedGitHubRelease);
+                w.GitHubAssetNames.Clear(); if (release is not null) foreach (var asset in release.Assets) w.GitHubAssetNames.Add(asset.Name);
+                w.SelectedGitHubAsset = "";
+                if (release is not null) w.AuthorVersion = release.Tag.TrimStart('v', 'V');
+            } else if (e.PropertyName == nameof(ScoopWorkspace.SelectedGitHubAsset)) {
+                var release = releases.FirstOrDefault(r => r.ToString() == w.SelectedGitHubRelease);
+                var asset = release?.Assets.FirstOrDefault(a => a.Name == w.SelectedGitHubAsset);
+                if (asset is not null) { w.AuthorUrl = asset.Url; w.AuthorHash = ""; }
+            }
+        };
+        Add("LoadGitHubReleases", async ct => { var repo = w.GitHubRepository; releases = await ScoopGitHubReleases.GetAsync(repo, ct); w.GitHubReleaseNames.Clear(); foreach (var release in releases) w.GitHubReleaseNames.Add(release.ToString()); w.SelectedGitHubRelease = ""; w.GitHubAssetNames.Clear(); if (releases.Count == 0) throw new InvalidOperationException("No published releases with assets were found."); });
+        w.Commands["CalculateAuthorHash"] = new Command(() => { var url = w.AuthorUrl; Enqueue("Calculate SHA-256", async ct => { var hash = await ScoopBucketAuthoring.HashDownload(url, ct); if (w.AuthorUrl == url) w.AuthorHash = hash; else throw new InvalidOperationException("The download URL changed; calculate the hash again."); }); }, Error);
+        w.Commands["CreateLocalBucket"] = new Command(() => { var root = Root(); var name = ScoopService.SafeSegment(w.NewBucketName.Trim()); Enqueue("Create bucket", async ct => {
+            var parent = Path.Combine(root, "buckets"); var target = Path.Combine(parent, name);
+            if (Directory.Exists(target) || File.Exists(target)) throw new IOException("A bucket with this name already exists.");
+            await Confirm("Create local bucket", $"Create a local Git bucket at {target}? It will not be published online.");
+            if (!string.Equals(Path.GetFullPath(w.Root), root, StringComparison.OrdinalIgnoreCase) || Directory.Exists(target) || File.Exists(target)) throw new InvalidOperationException("The root or target changed. Try again.");
+            Directory.CreateDirectory(parent);
+            var staging = Path.Combine(parent, ".devtools-bucket-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                Directory.CreateDirectory(Path.Combine(staging, "bucket"));
+                await ScoopService.RunScript("$ErrorActionPreference='Stop'; & git init -- " + ScoopService.Literal(staging) + "; if ($LASTEXITCODE -ne 0) { throw 'Git initialization failed' }", ct, log);
+                ct.ThrowIfCancellationRequested();
+                if (!string.Equals(Path.GetFullPath(w.Root), root, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("The Scoop root changed. Try again.");
+                Directory.Move(staging, target);
+            }
+            finally
+            {
+                if (Directory.Exists(staging) && (File.GetAttributes(staging) & FileAttributes.ReparsePoint) == 0) Directory.Delete(staging, true);
+            }
+            await Refresh(ct); w.AuthorBucket = name;
+        }); }, Error);
+        w.Commands["SaveBucketManifest"] = new Command(() => { var root = Root(); var bucket = w.AuthorBucket; var name = w.AuthorName.Trim(); var manifest = NewManifest(); var destination = ScoopBucketAuthoring.ManifestPath(root, bucket, name); var contents = manifest.ToJsonString(new JsonSerializerOptions { WriteIndented = true }); Enqueue("Save manifest", async ct => {
+            if (File.Exists(destination)) throw new IOException("A manifest with this name already exists. Choose another name.");
+            await Confirm("Save app manifest", $"Bucket: {bucket}\nFile: {destination}\n\n{contents}\n\nSave this manifest? It does not install the app.");
+            if (!string.Equals(Path.GetFullPath(w.Root), root, StringComparison.OrdinalIgnoreCase) || ScoopBucketAuthoring.ManifestPath(root, bucket, name) != destination) throw new InvalidOperationException("The bucket or Scoop root changed. Try again.");
+            var temporary = Path.Combine(Path.GetDirectoryName(destination)!, ".devtools-" + Guid.NewGuid().ToString("N") + ".tmp");
+            try { await File.WriteAllTextAsync(temporary, contents, ct); ct.ThrowIfCancellationRequested(); File.Move(temporary, destination, false); }
+            finally { if (File.Exists(temporary)) File.Delete(temporary); }
+            await Refresh(ct);
+        }); }, Error);
+        w.PropertyChanged += (_, e) => {
+            if (e.PropertyName != nameof(ScoopWorkspace.EditorBucket)) return;
+            w.EditorManifestNames.Clear(); w.EditorManifest = "";
+            if (string.IsNullOrWhiteSpace(w.EditorBucket)) return;
+            try {
+                var root = Path.GetFullPath(w.Root);
+                if (!ScoopService.Buckets(root).Any(b => string.Equals(b.Name, w.EditorBucket, StringComparison.OrdinalIgnoreCase))) throw new InvalidOperationException("Choose an added bucket.");
+                var sample = ScoopBucketAuthoring.ManifestPath(root, w.EditorBucket, "example");
+                foreach (var file in Directory.EnumerateFiles(Path.GetDirectoryName(sample)!, "*.json").OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)) {
+                    if ((File.GetAttributes(file) & FileAttributes.ReparsePoint) == 0) w.EditorManifestNames.Add(Path.GetFileNameWithoutExtension(file));
+                }
+            } catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException or InvalidOperationException) { Error(ex); }
+        };
+        w.Commands["LoadSelectedBucketJson"] = new Command(() => {
+            var root = Path.GetFullPath(Root()); var bucket = ScoopService.SafeSegment(w.EditorBucket); var name = ScoopService.SafeSegment(w.EditorManifest);
+            var file = ScoopBucketAuthoring.ManifestPath(root, bucket, name);
+            Enqueue("Load bucket manifest", async ct => {
+                if (!string.Equals(Path.GetFullPath(w.Root), root, StringComparison.OrdinalIgnoreCase) || !IsBucketManifest(root, file) || !File.Exists(file) || (File.GetAttributes(file) & FileAttributes.ReparsePoint) != 0) throw new InvalidOperationException("The selected bucket or manifest changed. Choose it again.");
+                var contents = await File.ReadAllTextAsync(file, ct);
+                if (JsonNode.Parse(contents) is not JsonObject) throw new InvalidDataException("The manifest must contain a JSON object.");
+                loadedManifestRoot = root; loadedManifestPath = file; loadedManifestContents = contents;
+                w.ManifestEditorFile = file; w.ManifestJson = contents; LoadManifestForm(file, contents);
+            });
+        }, Error);
+        Add("LoadBucketJson", async ct => {
+            var root = Root();
+            var file = await c.PickFileAsync("Choose a JSON manifest in an added bucket", "JSON files|*.json");
+            if (file is null) return;
+            file = Path.GetFullPath(file);
+            if (!IsBucketManifest(root, file) || !File.Exists(file) || (File.GetAttributes(file) & FileAttributes.ReparsePoint) != 0) throw new InvalidOperationException("Choose a JSON manifest directly inside an added bucket.");
+            var contents = await File.ReadAllTextAsync(file, ct);
+            if (JsonNode.Parse(contents) is not JsonObject) throw new InvalidDataException("The manifest must contain a JSON object.");
+            loadedManifestRoot = root; loadedManifestPath = file; loadedManifestContents = contents;
+            w.ManifestEditorFile = file; w.ManifestJson = contents; LoadManifestForm(file, contents);
+        });
+        Add("PreviewNewManifest", async ct => {
+            var node = NewManifest();
+            await c.ShowReportAsync("Manifest preview and checks", string.Join("\n", ScoopBucketAuthoring.Inspect(node)) + "\n\nGenerated JSON:\n" + node.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+        });
+        Add("InspectEditedManifest", async ct => {
+            if (loadedManifestPath.Length == 0) throw new InvalidOperationException("Load a bucket manifest first.");
+            var node = JsonNode.Parse(w.ManifestJson) as JsonObject ?? throw new InvalidDataException("The manifest must contain a JSON object.");
+            ApplyForm(node);
+            await c.ShowReportAsync("Manifest preview and checks", string.Join("\n", ScoopBucketAuthoring.Inspect(node)) + "\n\nPreview with current form changes:\n" + node.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+        });
+        w.Commands["ApplyManifestForm"] = new Command(() => {
+            if (loadedManifestPath.Length == 0) throw new InvalidOperationException("Load a bucket manifest first.");
+            var node = JsonNode.Parse(w.ManifestJson) as JsonObject ?? throw new InvalidDataException("The manifest must contain a JSON object.");
+            ApplyForm(node); w.ManifestJson = node.ToJsonString(new JsonSerializerOptions { WriteIndented = true }); formBaseline = FormValues();
+        }, Error);
+        w.Commands["SaveBucketJson"] = new Command(() => {
+            var root = loadedManifestRoot; var file = loadedManifestPath; var original = loadedManifestContents; var contents = w.ManifestJson;
+            if (file.Length == 0) throw new InvalidOperationException("Load a bucket manifest first.");
+            if (JsonNode.Parse(contents) is not JsonObject) throw new InvalidDataException("The manifest must contain a JSON object.");
+            Enqueue("Save edited manifest", async ct => {
+                if (!string.Equals(Path.GetFullPath(w.Root), root, StringComparison.OrdinalIgnoreCase) || !IsBucketManifest(root, file) || !File.Exists(file) || (File.GetAttributes(file) & FileAttributes.ReparsePoint) != 0 || await File.ReadAllTextAsync(file, ct) != original) throw new InvalidOperationException("The Scoop root or manifest changed. Reload it before saving.");
+                await Confirm("Replace bucket manifest", $"Replace {file} with the edited JSON?\n\nThis changes the bucket manifest; it does not install the app.");
+                if (!string.Equals(Path.GetFullPath(w.Root), root, StringComparison.OrdinalIgnoreCase) || !IsBucketManifest(root, file) || !File.Exists(file) || (File.GetAttributes(file) & FileAttributes.ReparsePoint) != 0 || await File.ReadAllTextAsync(file, ct) != original) throw new InvalidOperationException("The Scoop root or manifest changed. Reload it before saving.");
+                var temp = Path.Combine(Path.GetDirectoryName(file)!, ".devtools-" + Guid.NewGuid().ToString("N") + ".tmp");
+                try { await File.WriteAllTextAsync(temp, contents, ct); ct.ThrowIfCancellationRequested(); File.Move(temp, file, true); }
+                finally { if (File.Exists(temp)) File.Delete(temp); }
+                if (loadedManifestPath == file) loadedManifestContents = contents; await Refresh(ct);
+            });
+        }, Error);
+        w.Commands["ExportManifestJson"] = new Command(() => {
+            var name = ScoopService.SafeSegment(w.AuthorName.Trim());
+            var manifest = NewManifest();
+            var contents = manifest.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+            Enqueue("Export manifest", async ct => {
+                var folder = await c.PickFolderAsync("Choose where to export the JSON manifest"); if (folder is null) return;
+                var target = Path.Combine(Path.GetFullPath(folder), name + ".json");
+                if (File.Exists(target)) throw new IOException("The export file already exists. Choose a different folder or app name.");
+                await Confirm("Export app manifest", $"Save {target}?\n\n{contents}");
+                var temp = Path.Combine(Path.GetDirectoryName(target)!, ".devtools-" + Guid.NewGuid().ToString("N") + ".tmp");
+                try { await File.WriteAllTextAsync(temp, contents, ct); ct.ThrowIfCancellationRequested(); File.Move(temp, target, false); }
+                finally { if (File.Exists(temp)) File.Delete(temp); }
+            });
+        }, Error);
+        Add("AddBucket", async ct => { var name = ScoopService.SafeSegment((active?.BucketName ?? w.BucketName).Trim()); var root = Root(); var args = new List<string> { "bucket", "add", name }; if (!string.IsNullOrWhiteSpace(active?.BucketUrl ?? w.BucketUrl)) { if (!Uri.TryCreate((active?.BucketUrl ?? w.BucketUrl).Trim(), UriKind.Absolute, out var uri) || uri.Scheme != "https" || !string.IsNullOrEmpty(uri.UserInfo)) throw new ArgumentException("Use an HTTPS bucket repository URL without embedded credentials."); args.Add(uri.AbsoluteUri); } if (ScoopService.Buckets(root).Any(b => string.Equals(b.Name, name, StringComparison.OrdinalIgnoreCase))) throw new InvalidOperationException("This bucket is already added: " + name); await Confirm("Add bucket", string.Join(" ", args)); if (!string.Equals(Path.GetFullPath(w.Root), root, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("The Scoop root changed. Try again."); if (ScoopService.Buckets(root).Any(b => string.Equals(b.Name, name, StringComparison.OrdinalIgnoreCase))) throw new InvalidOperationException("This bucket is already added: " + name); await Run(root, args, ct); await Refresh(ct); });
+        Add("RemoveBucket", async ct => { var names = (active?.Buckets ?? w.BucketSelection.ToArray()).Select(b => ScoopService.SafeSegment(b.Name)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(); if (names.Length == 0) throw new InvalidOperationException("Select a bucket."); var root = Root(); await Confirm("Remove buckets", string.Join(", ", names)); if (!string.Equals(Path.GetFullPath(w.Root), root, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("The Scoop root changed. Select buckets again."); var current = ScoopService.Buckets(root); var missing = names.Where(n => !current.Any(b => string.Equals(b.Name, n, StringComparison.OrdinalIgnoreCase))).ToArray(); if (missing.Length > 0) throw new InvalidOperationException("Buckets no longer present: " + string.Join(", ", missing)); foreach (var name in names) await Run(root, ["bucket", "rm", name], ct); await Refresh(ct); });
         Add("UpdateBuckets", async ct => { await Run(Root(), ["update"], ct); await Refresh(ct); });
         Add("ShowCache", ct => Run(Root(), ["cache", "show"], ct));
         Add("ClearCache", async ct => { await Confirm("Clear cache", "Delete all cached Scoop downloads?"); await Run(Root(), ["cache", "rm", "*"], ct); });
-        Add("BrowseFolder", async ct => { if (await c.PickFolderAsync("Choose portable app folder") is { } path) { w.Field("folder").Value = path; if (w.Field("name").Value.Length == 0) w.Field("name").Value = Path.GetFileName(path).ToLowerInvariant(); } });
-        Add("BrowseExe", async ct => { if (await c.PickFileAsync("Choose main executable inside app folder", "Executable|*.exe") is { } path) { w.Field("exe").Value = path; if (w.Field("shortcut").Value.Length == 0) w.Field("shortcut").Value = Path.GetFileNameWithoutExtension(path); } });
+        Add("BrowseFolder", async ct => { if (await c.PickFolderAsync("Choose portable app folder") is { } path) { w.Field("folder").Value = path; if (w.Field("name").Value.Length == 0) w.Field("name").Value = SuggestCustomName(Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))); } });
+        Add("BrowseExe", async ct => { if (await c.PickFileAsync("Choose main executable inside app folder", "Executable|*.exe") is { } path) { w.Field("exe").Value = path; if (w.Field("folder").Value.Length == 0) w.Field("folder").Value = Path.GetDirectoryName(path) ?? ""; if (w.Field("name").Value.Length == 0) w.Field("name").Value = SuggestCustomName(Path.GetFileNameWithoutExtension(path)); if (w.Field("shortcut").Value.Length == 0) w.Field("shortcut").Value = Path.GetFileNameWithoutExtension(path); } });
         Add("AddCustom", AddCustom);
+        void AuthorListCommand(string name, Action action) => w.Commands[name] = new Command(() => { action(); w.AuthorListMessage = ""; }, e => w.AuthorListMessage = e.Message);
+        static void AddUnique(System.Collections.ObjectModel.ObservableCollection<string> list, string item)
+        {
+            if (list.Any(x => string.Equals(x, item, StringComparison.OrdinalIgnoreCase))) throw new ArgumentException("This entry is already in the list.");
+            list.Add(item);
+        }
+        AuthorListCommand("AddAuthorExecutable", () => { var value = w.AuthorExecutableDraft.Trim(); ValidateExecutable(value); AddUnique(w.AuthorExecutableItems, value); w.AuthorExecutableDraft = ""; });
+        AuthorListCommand("RemoveAuthorExecutable", () => { if (w.SelectedAuthorExecutable is not { } value) throw new ArgumentException("Select an executable to remove."); w.AuthorExecutableItems.Remove(value); });
+        AuthorListCommand("AddAuthorShortcut", () => { var exe = w.AuthorShortcutExecutableDraft.Trim(); var label = w.AuthorShortcutNameDraft.Trim(); if (exe.Contains('|') || label.Contains('|')) throw new ArgumentException("The character | is not supported in shortcut fields."); var value = exe + " | " + label; ApplyLists(new JsonObject(), value, ""); AddUnique(w.AuthorShortcutItems, value); w.AuthorShortcutExecutableDraft = ""; w.AuthorShortcutNameDraft = ""; });
+        AuthorListCommand("RemoveAuthorShortcut", () => { if (w.SelectedAuthorShortcut is not { } value) throw new ArgumentException("Select a shortcut to remove."); w.AuthorShortcutItems.Remove(value); });
+        AuthorListCommand("AddAuthorPath", () => { var value = w.AuthorPathDraft.Trim(); if (value.Length == 0) throw new ArgumentException("Enter a folder path."); ApplyLists(new JsonObject(), "", value); AddUnique(w.AuthorPathItems, value); w.AuthorPathDraft = ""; });
+        AuthorListCommand("RemoveAuthorPath", () => { if (w.SelectedAuthorPath is not { } value) throw new ArgumentException("Select a folder to remove."); w.AuthorPathItems.Remove(value); });
+        void PathCommand(string name, Action action) => w.Commands[name] = new Command(() => { action(); w.PathMessage = ""; }, e => w.PathMessage = e.Message);
+        PathCommand("AddPathEntry", () => {
+            var entry = w.PathDraft.Trim();
+            if (entry.Length == 0) throw new ArgumentException("Enter a folder path first.");
+            ValidateEntry(One(), entry);
+            if (w.PathItems.Any(p => string.Equals(p, entry, StringComparison.OrdinalIgnoreCase))) throw new ArgumentException("This folder is already in the list.");
+            w.PathItems.Add(entry); w.SelectedPath = entry;
+        });
+        PathCommand("ReplacePathEntry", () => {
+            var old = w.SelectedPath ?? throw new InvalidOperationException("Select a folder to edit.");
+            var entry = w.PathDraft.Trim();
+            if (entry.Length == 0) throw new ArgumentException("Enter a folder path first.");
+            ValidateEntry(One(), entry);
+            if (w.PathItems.Any(p => !string.Equals(p, old, StringComparison.OrdinalIgnoreCase) && string.Equals(p, entry, StringComparison.OrdinalIgnoreCase))) throw new ArgumentException("This folder is already in the list.");
+            var index = w.PathItems.IndexOf(old); if (index < 0) throw new InvalidOperationException("Select a folder to edit.");
+            w.PathItems[index] = entry; w.SelectedPath = entry;
+        });
+        PathCommand("RemovePathEntry", () => {
+            var entry = w.SelectedPath ?? throw new InvalidOperationException("Select a folder to remove.");
+            w.PathItems.Remove(entry); w.SelectedPath = null;
+        });
         Add("SavePaths", SavePaths);
         Add("AddPathFolder", async ct => { var a = One(); if (await c.PickFolderAsync("Choose PATH folder") is { } path) { var current = ScoopService.Current(a.Directory); var relative = Path.GetRelativePath(current, path); var entry = relative == "." || (!relative.StartsWith("..") && !Path.IsPathRooted(relative)) ? relative : path; w.PathEntries = (w.PathEntries.TrimEnd() + Environment.NewLine + entry).Trim(); } });
         Add("SyncPaths", async ct => { await Confirm("Reapply saved PATH rules", "Reapply saved per-app PATH rules, reset changed apps, and remove owned paths of uninstalled apps?"); await SyncPaths(Root(), ct); });
@@ -166,14 +377,58 @@ public sealed class ScoopController
         var candidate = active?.Root ?? w.Root;
         if (string.IsNullOrWhiteSpace(candidate)) candidate = ScoopService.DetectRoot(c.Get("scoop.root"));
         var status = setup.Probe(candidate); ApplySetup(status);
-        if (!w.HasInstallation) { all.Clear(); Filter(); w.Results.Clear(); w.Buckets.Clear(); w.Summary = ""; return; }
+        if (!w.HasInstallation) { all.Clear(); Filter(); w.UpdatePackages.Clear(); w.UpdateSelection.Clear(); w.Results.Clear(); w.Buckets.Clear(); w.Summary = ""; return; }
         var root = status.Root;
         w.Root = root; c.Save("scoop.root", root); if (active is not null) active = active with { Root = root };
         var result = await Task.Run(() => (Apps: ScoopService.Installed(root, ct), Buckets: ScoopService.Buckets(root)), ct);
-        all = result.Apps; Filter(); Replace(w.Buckets, result.Buckets);
+        all = result.Apps; Filter(); w.UpdateSelection.Clear(); Replace(w.UpdatePackages, all.Where(a => a.AvailableVersion.Length > 0)); Replace(w.Buckets, result.Buckets); Replace(w.AuthorBuckets, result.Buckets.Select(b => b.Name));
         w.Summary = $"{all.Count} installed · {all.Count(a => a.Status.StartsWith("Update:"))} updates · {all.Count(a => a.Held)} held · {w.Buckets.Count} buckets";
     }
-    private void ApplySetup(ScoopSetupResult result) { w.SetupState = result.State; w.SetupMessage = result.Message; if (result.Root.Length > 0) w.Root = result.Root; }
+    private Dictionary<string, string> FormValues() => new() { ["version"] = w.AuthorVersion, ["url"] = w.AuthorUrl, ["hash"] = w.AuthorHash, ["description"] = w.AuthorDescription, ["homepage"] = w.AuthorHomepage, ["license"] = w.AuthorLicense, ["architecture"] = w.AuthorArchitecture, ["bin"] = w.AuthorExecutable, ["shortcuts"] = w.AuthorShortcuts, ["env_add_path"] = w.AuthorPaths };
+    private static string Scalar(JsonNode? n) => n is JsonValue v && v.TryGetValue<string>(out var x) ? x : "";
+    private void LoadManifestForm(string file, string contents)
+    {
+        var n = (JsonObject)JsonNode.Parse(contents)!; w.AuthorName = Path.GetFileNameWithoutExtension(file);
+        w.AuthorVersion = Scalar(n["version"]); w.AuthorDescription = Scalar(n["description"]); w.AuthorHomepage = Scalar(n["homepage"]); w.AuthorLicense = Scalar(n["license"]); w.AuthorExecutable = n["bin"] is JsonArray bins ? string.Join(Environment.NewLine, bins.Select(Scalar).Where(x => x.Length > 0)) : Scalar(n["bin"]);
+        var architectures = n["architecture"] as JsonObject; var arch = architectures?.FirstOrDefault(p => p.Value is JsonObject).Key;
+        w.AuthorArchitecture = arch is "64bit" or "32bit" or "arm64" ? arch : "Any"; var source = w.AuthorArchitecture == "Any" ? n : architectures![w.AuthorArchitecture] as JsonObject;
+        w.AuthorUrl = Scalar(source?["url"]); w.AuthorHash = Scalar(source?["hash"]);
+        w.AuthorShortcuts = n["shortcuts"] is JsonArray shortcuts ? string.Join(Environment.NewLine, shortcuts.OfType<JsonArray>().Where(a => a.Count >= 2 && Scalar(a[0]).Length > 0 && Scalar(a[1]).Length > 0).Select(a => Scalar(a[0]) + " | " + Scalar(a[1]))) : "";
+        w.AuthorPaths = n["env_add_path"] is JsonArray paths ? string.Join(Environment.NewLine, paths.Select(Scalar).Where(x => x.Length > 0)) : Scalar(n["env_add_path"]); formBaseline = FormValues();
+    }
+    private static void ApplyLists(JsonObject n, string shortcuts, string paths)
+    {
+        static string[] Lines(string text) => text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var items = new JsonArray(); foreach (var line in Lines(shortcuts)) { var parts = line.Split('|', 2, StringSplitOptions.TrimEntries); if (parts.Length != 2 || parts.Any(string.IsNullOrWhiteSpace)) throw new ArgumentException("Each shortcut must be executable | name."); if (Path.IsPathRooted(parts[0]) || parts[0].Replace('\\', '/').Split('/').Any(p => p is ".." or "." or "")) throw new ArgumentException("Shortcut executable must be a relative path inside the app."); ScoopService.SafeSegment(parts[1].Replace(' ', '_')); items.Add(new JsonArray(parts[0].Replace('\\', '/'), parts[1])); }
+        if (items.Count > 0) n["shortcuts"] = items; else n.Remove("shortcuts");
+        var pathItems = new JsonArray(); foreach (var path in Lines(paths)) { var value = path.Replace('\\', '/'); if (Path.IsPathRooted(value) || value.Split('/').Any(p => p == ".." || p == "")) throw new ArgumentException("PATH entries must be relative folders inside the app."); pathItems.Add(value); } if (pathItems.Count > 0) n["env_add_path"] = pathItems; else n.Remove("env_add_path");
+    }
+    private static void ValidateExecutable(string value)
+    {
+        var normalized = value.Replace('\\', '/');
+        if (string.IsNullOrWhiteSpace(value) || Path.IsPathRooted(value) || normalized.Split('/').Any(p => p is ".." or "." or "")) throw new ArgumentException("Enter an executable path relative to the app folder.");
+    }
+    private static void ApplyExecutables(JsonObject n, string text)
+    {
+        var entries = text.Split(['\r', '\n'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        foreach (var entry in entries) ValidateExecutable(entry);
+        if (entries.Length == 0) n.Remove("bin");
+        else if (entries.Length == 1) n["bin"] = entries[0].Replace('\\', '/');
+        else n["bin"] = new JsonArray(entries.Select(x => (JsonNode?)JsonValue.Create(x.Replace('\\', '/'))).ToArray());
+    }
+    private JsonObject NewManifest() { var node = ScoopBucketAuthoring.Manifest(w.AuthorVersion, w.AuthorUrl, w.AuthorHash, w.AuthorDescription, w.AuthorHomepage, w.AuthorLicense, w.AuthorArchitecture, "", ""); ApplyExecutables(node, w.AuthorExecutable); ApplyLists(node, w.AuthorShortcuts, w.AuthorPaths); return node; }
+    private void ApplyForm(JsonObject n)
+    {
+        var current = FormValues(); bool Changed(string key) => !formBaseline.TryGetValue(key, out var old) || old != current[key];
+        foreach (var key in new[] { "version", "description", "homepage", "license" }) if (Changed(key)) { if (key == "version") ScoopService.SafeSegment(current[key].Trim()); if (key == "homepage" && current[key].Trim().Length > 0) ScoopBucketAuthoring.Https(current[key]); if (current[key].Trim().Length == 0) n.Remove(key); else n[key] = current[key].Trim(); }
+        if (Changed("bin")) { if (n["bin"] is JsonArray complexBins && complexBins.Any(x => x is not JsonValue)) throw new InvalidOperationException("This manifest has advanced executable entries. Edit them in Advanced JSON to preserve their options."); ApplyExecutables(n, w.AuthorExecutable); }
+        if (Changed("architecture")) throw new InvalidOperationException("Change architecture in the JSON editor to preserve other architecture entries.");
+        if (Changed("url") || Changed("hash")) { var target = w.AuthorArchitecture == "Any" ? n : n["architecture"]?[w.AuthorArchitecture] as JsonObject ?? throw new InvalidOperationException("Architecture entry changed in JSON; reload the manifest."); if (Changed("url")) { ScoopBucketAuthoring.Https(w.AuthorUrl); target["url"] = w.AuthorUrl.Trim(); } if (Changed("hash")) { if (!System.Text.RegularExpressions.Regex.IsMatch(w.AuthorHash.Trim(), "^[a-fA-F0-9]{64}$")) throw new ArgumentException("Enter a SHA-256 hash (64 hexadecimal characters)."); target["hash"] = w.AuthorHash.Trim().ToLowerInvariant(); } }
+        if (Changed("shortcuts") && n["shortcuts"] is JsonArray complexShortcuts && complexShortcuts.Any(x => x is not JsonArray row || row.Count != 2 || row.Any(v => v is not JsonValue))) throw new InvalidOperationException("This manifest has advanced shortcuts. Edit them in Advanced JSON to preserve their options.");
+        if (Changed("env_add_path") && n["env_add_path"] is JsonArray complexPaths && complexPaths.Any(x => x is not JsonValue)) throw new InvalidOperationException("This manifest has advanced PATH entries. Edit them in Advanced JSON to preserve their options.");
+        if (Changed("shortcuts") || Changed("env_add_path")) { var scratch = new JsonObject(); ApplyLists(scratch, w.AuthorShortcuts, w.AuthorPaths); foreach (var key in new[] { "shortcuts", "env_add_path" }) if (Changed(key)) { if (scratch[key] is { } value) n[key] = value.DeepClone(); else n.Remove(key); } }
+    }
+    private void ApplySetup(ScoopSetupResult result) { if (w.SetupState == ScoopSetupState.Checking && result.State is ScoopSetupState.Missing or ScoopSetupState.Broken or ScoopSetupState.PathMissing) w.Tab = 5; w.SetupState = result.State; w.SetupMessage = result.Message; if (result.Root.Length > 0) w.Root = result.Root; }
     private void Filter() { var selected = w.Selected?.Name; Replace(w.Installed, all.Where(a => $"{a.Name} {a.Version} {a.Bucket} {a.HeldLabel} {a.Status}".Contains(w.Filter.Trim(), StringComparison.OrdinalIgnoreCase))); w.Selected = w.Installed.FirstOrDefault(a => a.Name == selected); }
     private ScoopPackage One() => (active?.Selected ?? w.Selected) ?? throw new InvalidOperationException("Select an installed app.");
     private void Select()
@@ -192,6 +447,18 @@ public sealed class ScoopController
         w.Details = $"{a.Name} · {a.Version}\n{a.Description}\nBucket: {a.Bucket} · {a.Status}\nHomepage: {a.Homepage}\nLicense: {a.License}\nPath: {a.Directory}\nSize (all versions): {size / 1048576d:N1} MB\nShims: {manifest["bin"]}\nShortcuts: {manifest["shortcuts"]}\nInstalled versions: {string.Join(", ", w.Versions)}";
         await c.ShowReportAsync("Package details · " + a.Name, w.Details);
     }
+    private async Task Download(CancellationToken ct)
+    {
+        var selected = active?.Search ?? w.SearchSelection.ToArray();
+        if (selected.Length == 0) throw new InvalidOperationException("Select one or more search results.");
+        var root = Root();
+        if (!string.Equals(Path.GetFullPath(w.Root), Path.GetFullPath(root), StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("The Scoop root changed. Search again.");
+        foreach (var a in selected) { ScoopService.SafeSegment(a.Name); ScoopService.SafeSegment(a.Bucket); }
+        var installed = await Task.Run(() => ScoopService.Installed(root, ct), ct);
+        var blocked = selected.Where(a => installed.Any(i => string.Equals(i.Name, a.Name, StringComparison.OrdinalIgnoreCase))).Select(a => a.Name).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if (blocked.Length > 0) throw new InvalidOperationException("Already installed: " + string.Join(", ", blocked) + ". Remove these packages from the selection.");
+        await Run(root, ["download", .. selected.Select(a => a.Identity).Distinct(StringComparer.OrdinalIgnoreCase)], ct);
+    }
     private async Task Install(CancellationToken ct)
     {
         var selected = active?.Search ?? w.SearchSelection.ToArray(); if (selected.Length == 0) throw new InvalidOperationException("Select one or more search results.");
@@ -203,6 +470,11 @@ public sealed class ScoopController
         }
         await Confirm("Install preview", string.Join("\n", preview) + "\nScoop installs dependencies automatically and reports download sizes when it starts. Install these packages?");
         var root = Root(); await Run(root, ["install", .. selected.Select(a => a.Identity)], ct); await Refresh(ct);
+    }
+    private static string SuggestCustomName(string text)
+    {
+        var name = System.Text.RegularExpressions.Regex.Replace(text.ToLowerInvariant(), @"[^a-z0-9_.+-]+", "-").Trim('-', '.');
+        return name.Length > 0 && char.IsAsciiLetterOrDigit(name[0]) ? name : "";
     }
     private async Task AddCustom(CancellationToken ct)
     {
@@ -218,7 +490,8 @@ public sealed class ScoopController
         var relativeExe = Path.GetRelativePath(source, exe).Replace('\\', '/');
         var shim = F("shim"); if (shim.Length > 0) ScoopService.SafeSegment(shim);
         var shortcut = F("shortcut"); if (shortcut.Length == 0) shortcut = name; ScoopService.SafeSegment(shortcut.Replace(' ', '_'));
-        var move = F("method") == "Move";
+        var method = F("method"); if (method is not ("Copy" or "Move")) throw new ArgumentException("Choose Copy or Move.");
+        var move = method == "Move";
         await Task.Run(() => ScoopService.ValidateTree(source, ct), ct);
         foreach (var reserved in new[] { "manifest.json", "install.json", "scoop-manifest.json", "scoop-install.json" }) if (File.Exists(Path.Combine(source, reserved))) throw new IOException("Source contains Scoop metadata: " + reserved + ". Choose the original portable app folder.");
         await Confirm("Add custom app", $"{(move ? "Move" : "Copy")} {source}\nto {target}\nExecutable: {relativeExe}\nCreate shim and Start Menu shortcut?" + (move ? "\nThe original folder will be moved. Keep a backup if needed." : "\nThe original folder will be kept."));

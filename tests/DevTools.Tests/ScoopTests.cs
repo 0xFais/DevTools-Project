@@ -12,6 +12,28 @@ internal static class ScoopTests
     private static void Reject(Action action) { try { action(); } catch (ArgumentException) { return; } throw new Exception("Unsafe input accepted."); }
     internal static void RunAll(string artifacts, Action<string, Action> run)
     {
+        run("Scoop update center lists held updates and blocks held and stale selections", () =>
+        {
+            var f = new Fixture(artifacts); Act(f, "Refresh");
+            var item = f.Workspace.UpdatePackages.Single(p => p.Name == "alpha");
+            Check(item.Held && item.AvailableVersion == "2.0");
+            f.Workspace.UpdateSelection.Add(item); Act(f, "UpdateSelectedPackages");
+            Check(!File.Exists(f.Calls) && f.Page.Status.Contains("Held"));
+            var install = Path.Combine(f.Root, "apps", "alpha", "current", "install.json");
+            File.WriteAllText(install, "{\"bucket\":\"main\",\"hold\":false}");
+            Act(f, "Refresh"); item = f.Workspace.UpdatePackages.Single(p => p.Name == "alpha"); f.Workspace.UpdateSelection.Add(item);
+            File.WriteAllText(install, "{\"bucket\":\"main\",\"hold\":true}");
+            Act(f, "UpdateSelectedPackages"); Check(!File.Exists(f.Calls) && f.Page.Status.Contains("changed"));
+        });
+        run("Scoop update center reports verified updated versions", () =>
+        {
+            var f = new Fixture(artifacts); var current = Path.Combine(f.Root, "apps", "alpha", "current");
+            File.WriteAllText(Path.Combine(current, "install.json"), "{\"bucket\":\"main\",\"hold\":false}");
+            var manifest = Path.Combine(current, "manifest.json");
+            File.AppendAllText(f.Script, "\nif ($args[0] -eq 'update') { Set-Content -LiteralPath " + ScoopService.Literal(manifest) + " -Value '{\"version\":\"2.0\"}' }\n");
+            Act(f, "Refresh"); f.Workspace.UpdateSelection.Add(f.Workspace.UpdatePackages.Single(p => p.Name == "alpha")); Act(f, "UpdateSelectedPackages");
+            Check(f.Context.Report.Contains("alpha: updated to 2.0") && !f.Workspace.UpdatePackages.Any(p => p.Name == "alpha"));
+        });
         run("Scoop PowerShell output stays readable text across host, warning and error streams", () =>
         {
             var lines = new System.Collections.Concurrent.ConcurrentQueue<string>();
@@ -178,6 +200,21 @@ internal static class ScoopTests
             Check(File.ReadAllText(f.Calls).Contains("[\"hold\",\"alpha\"]"));
             SynchronizationContext.SetSynchronizationContext(null);
         });
+        run("Scoop search download only caches available packages and rejects installed selections", () =>
+        {
+            var f = new Fixture(artifacts); f.Workspace.Query = ""; Act(f, "Search");
+            f.Workspace.SearchSelection.Add(f.Workspace.Results.Single(a => a.Name == "alpha"));
+            f.Workspace.SearchSelection.Add(f.Workspace.Results.Single(a => a.Name == "beta"));
+            Act(f, "Download"); Check(f.Page.Status.StartsWith("Failed") && !File.Exists(f.Calls));
+            f.Workspace.SearchSelection.RemoveAt(0); Act(f, "Download");
+            Check(File.ReadAllText(f.Calls).Contains("[\"download\",\"main/beta\"]"));
+        });
+        run("Scoop search info displays manifest information", () =>
+        {
+            var f = new Fixture(artifacts); f.Workspace.Query = "alpha"; Act(f, "Search");
+            f.Workspace.SearchSelection.Add(f.Workspace.Results.Single()); Act(f, "Info");
+            Check(f.Context.Report.Contains("alpha") && f.Context.Report.Contains("MIT") && f.Context.Report.Contains("git"));
+        });
         run("Scoop install preview decline does not start installation", () =>
         {
             var f = new Fixture(artifacts); f.Workspace.Query = "alpha"; Act(f, "Search"); f.Workspace.SearchSelection.Add(f.Workspace.Results.Single()); f.Context.Confirm = false; Act(f, "Install");
@@ -202,11 +239,99 @@ internal static class ScoopTests
             f.Workspace.BucketName = "extras"; f.Workspace.BucketUrl = "https://example.com/bucket.git"; Act(f, "AddBucket");
             var calls = File.ReadAllText(f.Calls); Check(calls.Contains("alpha@0.9") && calls.Contains("https://example.com/bucket.git"));
         });
+        run("Scoop authored manifests validate source, hash and relative executables", () =>
+        {
+            var digest = new string('a', 64);
+            var manifest = ScoopBucketAuthoring.Manifest("1.2", "https://example.com/app.zip", digest, "Example", "https://example.com", "MIT", "64bit", "bin/app.exe", "App");
+            Check((string?)manifest["architecture"]?["64bit"]?["hash"] == digest);
+            Reject(() => ScoopBucketAuthoring.Manifest("1", "http://example.com/a.zip", digest, "", "", "", "Any", "", ""));
+            Reject(() => ScoopBucketAuthoring.Manifest("1", "https://example.com/a.zip", "bad", "", "", "", "Any", "", ""));
+            Reject(() => ScoopBucketAuthoring.Manifest("1", "https://example.com/a.zip", digest, "", "", "", "Any", "../bad.exe", ""));
+        });
+        run("Scoop manifest checks identify missing downloads, checksums and scripts", () =>
+        {
+            var incomplete = System.Text.Json.Nodes.JsonNode.Parse("{\"version\":\"1\",\"installer\":{\"script\":\"example\"}}")!.AsObject();
+            var findings = ScoopBucketAuthoring.Inspect(incomplete);
+            Check(findings.Any(x => x.Contains("ERROR") && x.Contains("download")) && findings.Any(x => x.Contains("scripts")));
+            var sources = System.Text.Json.Nodes.JsonNode.Parse("{\"version\":\"1\",\"architecture\":{\"64bit\":{\"url\":\"https://example.com/a.zip\"}}}")!.AsObject();
+            Check(ScoopBucketAuthoring.Inspect(sources).Any(x => x.Contains("checksum")));
+        });
+        run("Scoop manifest editor preserves advanced fields and blocks stale edits", () =>
+        {
+            var f = new Fixture(artifacts); var file = Path.Combine(f.Root, "buckets", "main", "bucket", "custom.json");
+            var original = "{\"version\":\"1\",\"installer\":{\"script\":\"example\"}}"; File.WriteAllText(file, original);
+            f.Context.PickFile = file; Act(f, "LoadBucketJson"); Check(f.Workspace.ManifestJson == original);
+            f.Workspace.ManifestJson = original.Replace("\"1\"", "\"2\""); Act(f, "SaveBucketJson");
+            Check(File.ReadAllText(file).Contains("installer") && File.ReadAllText(file).Contains("\"2\""));
+            File.WriteAllText(file, "{\"version\":\"external\"}"); f.Workspace.ManifestJson = "{\"version\":\"3\"}"; Act(f, "SaveBucketJson");
+            Check(File.ReadAllText(file).Contains("external") && f.Page.Status.Contains("changed"));
+        });
+        run("Scoop manifest editor lists and loads selected bucket manifests", () =>
+        {
+            var f = new Fixture(artifacts); var folder = Path.Combine(f.Root, "buckets", "main", "bucket");
+            var file = Path.Combine(folder, "pickme.json"); File.WriteAllText(file, "{\"version\":\"1\",\"custom\":true}");
+            f.Workspace.EditorBucket = "main"; Check(f.Workspace.EditorManifestNames.Contains("pickme"));
+            f.Workspace.EditorManifest = "pickme"; Act(f, "LoadSelectedBucketJson");
+            Check(f.Workspace.ManifestEditorFile == file && f.Workspace.ManifestJson.Contains("custom"));
+            f.Workspace.ManifestJson = "{\"version\":\"2\",\"custom\":true}"; Act(f, "SaveBucketJson");
+            Check(File.ReadAllText(file).Contains("custom") && File.ReadAllText(file).Contains("2"));
+            f.Workspace.EditorBucket = "missing"; Check(f.Workspace.EditorManifestNames.Count == 0);
+        });
+        run("Scoop manifest form loads and preserves advanced fields with multiple shortcuts and paths", () =>
+        {
+            var f = new Fixture(artifacts); var file = Path.Combine(f.Root, "buckets", "main", "bucket", "form.json");
+            File.WriteAllText(file, "{\"version\":\"1\",\"url\":\"https://example.com/a.zip\",\"hash\":\"" + new string('a', 64) + "\",\"installer\":{\"script\":\"keep\"},\"shortcuts\":[[\"a.exe\",\"App A\"]],\"env_add_path\":[\"bin\"]}");
+            f.Workspace.EditorBucket = "main"; f.Workspace.EditorManifest = "form"; Act(f, "LoadSelectedBucketJson");
+            Check(f.Workspace.AuthorVersion == "1" && f.Workspace.AuthorShortcuts.Contains("a.exe | App A") && f.Workspace.AuthorPaths == "bin");
+            f.Workspace.AuthorVersion = "2"; f.Workspace.AuthorShortcuts = "a.exe | App A\nb.exe | App B"; f.Workspace.AuthorPaths = "bin\ntools"; Act(f, "ApplyManifestForm"); Act(f, "SaveBucketJson");
+            var result = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(file))!;
+            Check(result["version"]!.ToString() == "2" && result["installer"]!["script"]!.ToString() == "keep" && result["shortcuts"]!.AsArray().Count == 2 && result["env_add_path"]!.AsArray().Count == 2);
+        });
+        run("Scoop manifest export creates JSON without overwriting existing files", () =>
+        {
+            var f = new Fixture(artifacts); f.Context.PickFolder = Path.Combine(f.Root, "export"); Directory.CreateDirectory(f.Context.PickFolder);
+            f.Workspace.AuthorName = "example"; f.Workspace.AuthorVersion = "1"; f.Workspace.AuthorUrl = "https://example.com/a.zip"; f.Workspace.AuthorHash = new string('a', 64);
+            Act(f, "ExportManifestJson"); var path = Path.Combine(f.Context.PickFolder, "example.json"); Check(File.Exists(path));
+            File.WriteAllText(path, "existing"); Act(f, "ExportManifestJson"); Check(File.ReadAllText(path) == "existing");
+        });
+        run("Scoop manifest lists add and remove entries and export multiple executables", () =>
+        {
+            var f = new Fixture(artifacts); var w = f.Workspace;
+            w.AuthorExecutableDraft = "bin/a.exe"; Act(f, "AddAuthorExecutable"); w.AuthorExecutableDraft = "bin/b.exe"; Act(f, "AddAuthorExecutable");
+            w.AuthorShortcutExecutableDraft = "bin/a.exe"; w.AuthorShortcutNameDraft = "App A"; Act(f, "AddAuthorShortcut");
+            w.AuthorPathDraft = "bin"; Act(f, "AddAuthorPath"); Check(w.AuthorExecutableItems.Count == 2 && w.AuthorShortcuts == "bin/a.exe | App A" && w.AuthorPaths == "bin");
+            w.SelectedAuthorExecutable = "bin/a.exe"; Act(f, "RemoveAuthorExecutable"); Check(w.AuthorExecutable == "bin/b.exe");
+            w.AuthorExecutableDraft = "../unsafe.exe"; Act(f, "AddAuthorExecutable"); Check(w.AuthorExecutableItems.Count == 1 && w.AuthorListMessage.Length > 0);
+            w.AuthorExecutableDraft = "bin/c.exe"; Act(f, "AddAuthorExecutable");
+            f.Context.PickFolder = Path.Combine(f.Root, "list-export"); Directory.CreateDirectory(f.Context.PickFolder);
+            w.AuthorName = "list"; w.AuthorVersion = "1"; w.AuthorUrl = "https://example.com/a.zip"; w.AuthorHash = new string('a', 64); Act(f, "ExportManifestJson");
+            var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path.Combine(f.Context.PickFolder, "list.json")))!;
+            Check(json["bin"]!.AsArray().Count == 2 && json["shortcuts"]!.AsArray().Count == 1 && json["env_add_path"]!.AsArray().Count == 1);
+        });
+        run("Scoop bucket changes reject duplicates and unsafe URLs", () =>
+        {
+            var f = new Fixture(artifacts); f.Workspace.BucketName = "main"; Act(f, "AddBucket");
+            if (!f.Page.Status.Contains("already added") || File.Exists(f.Calls)) throw new Exception("status=" + f.Page.Status + " report=" + f.Context.Report);
+            f.Workspace.BucketName = "extras"; f.Workspace.BucketUrl = "https://user:password@example.com/repo"; Act(f, "AddBucket");
+            Check(f.Page.Status.Contains("credentials") && !File.Exists(f.Calls));
+            f.Workspace.BucketUrl = "http://example.com/repo"; Act(f, "AddBucket");
+            Check(f.Page.Status.Contains("HTTPS") && !File.Exists(f.Calls));
+        });
         run("Scoop search truncates large result sets at 500", () =>
         {
             var f = new Fixture(artifacts); var bucket = Path.Combine(f.Root, "buckets", "main", "bucket");
             for (var i = 0; i < 505; i++) File.WriteAllText(Path.Combine(bucket, "test-" + i + ".json"), "{\"version\":\"1\"}");
             Check(ScoopService.Search(f.Root, "test-", CancellationToken.None).Count == 500);
+        });
+        run("Scoop PATH list reports validation errors and synchronizes changes", () =>
+        {
+            var f = new Fixture(artifacts); Act(f, "Refresh"); f.Workspace.Selected = f.Workspace.Installed.Single(a => a.Name == "alpha");
+            f.Workspace.PathEntries = ""; f.Workspace.PathDraft = "missing-folder"; Act(f, "AddPathEntry");
+            Check(f.Workspace.PathMessage.Length > 0 && f.Workspace.PathItems.Count == 0);
+            f.Workspace.PathDraft = "."; Act(f, "AddPathEntry");
+            Check(f.Workspace.PathMessage == "" && f.Workspace.PathItems.SequenceEqual(["."]) && f.Workspace.PathEntries == ".");
+            Act(f, "AddPathEntry"); Check(f.Workspace.PathMessage.Length > 0 && f.Workspace.PathItems.Count == 1);
+            Act(f, "RemovePathEntry"); Check(f.Workspace.PathMessage == "" && f.Workspace.PathEntries == "");
         });
         run("Scoop relative PATH rules persist without changing unrelated manifest data", () =>
         {
@@ -268,7 +393,8 @@ internal static class ScoopTests
         private CancellationTokenSource? operation;
         internal bool Confirm = true;
         internal bool CancelOnConfirm;
-        internal string Preview = "";
+        internal string Preview = "", Report = "";
+        internal string? PickFile, PickFolder;
         internal Func<string, IEnumerable<string>, CancellationToken, Task<ProcessResult>>? Process;
         public TestContext(string directory) { DataDirectory = directory; Directory.CreateDirectory(directory); }
         public string DataDirectory { get; }
@@ -279,9 +405,9 @@ internal static class ScoopTests
         public void Log(string module, string message) { }
         public Task<bool> ConfirmAsync(string title, string message) { Preview = message; if (CancelOnConfirm) Cancel(); return Task.FromResult(Confirm); }
         internal void Cancel() => operation?.Cancel();
-        public Task ShowReportAsync(string title, string content) => Task.CompletedTask;
-        public Task<string?> PickFolderAsync(string title) => Task.FromResult<string?>(null);
-        public Task<string?> PickFileAsync(string title, string filter) => Task.FromResult<string?>(null);
+        public Task ShowReportAsync(string title, string content) { Report = content; return Task.CompletedTask; }
+        public Task<string?> PickFolderAsync(string title) => Task.FromResult(PickFolder);
+        public Task<string?> PickFileAsync(string title, string filter) => Task.FromResult(PickFile);
         public Task<ProcessResult> RunAsync(string executable, IEnumerable<string> arguments, CancellationToken cancellationToken, string? workingDirectory = null, IReadOnlyDictionary<string, string>? environment = null) => Process?.Invoke(executable, arguments, cancellationToken) ?? throw new NotSupportedException();
         public void Open(string path) { }
         public bool TryBeginOperation() { if (operation is not null) return false; operation = new(); return true; }

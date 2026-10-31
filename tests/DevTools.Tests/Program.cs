@@ -18,6 +18,19 @@ namespace DevTools.Tests;
 
 internal static class Program
 {
+    internal static string FindRepository(string? explicitRoot, params string[] startDirectories)
+    {
+        if (!string.IsNullOrWhiteSpace(explicitRoot))
+        {
+            var root = Path.GetFullPath(explicitRoot);
+            if (File.Exists(Path.Combine(root, "DevTools.sln"))) return root;
+            throw new DirectoryNotFoundException($"Project root does not contain DevTools.sln: {root}");
+        }
+        foreach (var start in startDirectories)
+            for (var directory = new DirectoryInfo(Path.GetFullPath(start)); directory is not null; directory = directory.Parent)
+                if (File.Exists(Path.Combine(directory.FullName, "DevTools.sln"))) return directory.FullName;
+        throw new DirectoryNotFoundException("Could not locate DevTools.sln. Pass the project root as an argument.");
+    }
     private static int count;
     [STAThread]
     public static int Main(string[] args)
@@ -64,9 +77,10 @@ internal static class Program
                 return 0;
             }
             if (args.FirstOrDefault() == "--windows-readonly") { WindowsControlTests.ReadOnlySmoke(args[1]); return 0; }
-            var repo = Path.GetFullPath(args.FirstOrDefault() ?? ".");
+            var repo = FindRepository(args.FirstOrDefault(), AppContext.BaseDirectory, Environment.CurrentDirectory);
             var artifacts = Path.Combine(repo, "artifacts", "tests");
             Directory.CreateDirectory(artifacts);
+            Run("Repository discovery works from the test output directory", () => { Check(FindRepository(null, AppContext.BaseDirectory, Environment.CurrentDirectory) == repo); Check(FindRepository(repo, AppContext.BaseDirectory, Environment.CurrentDirectory) == repo); });
             Run("Context commands and legacy Rider registry key", () => { var app = new AppProfile("rider", "Rider", "rider64.exe", "editor", "Rider"); Check(ContextMenuModule.RegistryKeyName(app) == "Rider"); Check(WindowsEnvironment.ContextCommand("rider", @"C:\Some Folder\rider64.exe", "background") == "\"C:\\Some Folder\\rider64.exe\" \"%V\""); Throws<ArgumentException>(() => WindowsEnvironment.ContextCommand("rider", "bad\"path", "files")); });
             Run("Settings round-trip and INI import parser", () => { var dir = Path.Combine(artifacts, "settings"); var store = new SettingsStore(dir); store.Save("a", "value with spaces"); Check(new SettingsStore(dir).Get("a") == "value with spaces"); var ini = Path.Combine(dir, "old.ini"); File.WriteAllText(ini, "[settings]\ntheme=Dark\n; comment\n[paths]\npgdata=C:\\PostgreSQL\\data\n"); Check(SettingsStore.ReadIni(ini)["settings"]["theme"] == "Dark"); });
             Run("Process arguments are passed literally", () => { var input = "a & b \"quoted\" %PATH%"; var r = ProcessRunner.RunAsync("dotnet", [Assembly.GetExecutingAssembly().Location, "--echo", input], CancellationToken.None).GetAwaiter().GetResult(); Check(r.ExitCode == 0 && r.Output == input); });
@@ -81,7 +95,8 @@ internal static class Program
             {
                 var folder = Path.Combine(artifacts, "Extensions", "Sample");
                 Directory.CreateDirectory(folder);
-                var built = Path.Combine(repo, "extensions", "DevTools.SampleExtension", "bin", "Release", "net10.0-windows");
+                var configuration = Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyConfigurationAttribute>()?.Configuration ?? "Debug";
+                var built = Path.Combine(repo, "extensions", "DevTools.SampleExtension", "bin", configuration, "net10.0-windows");
                 foreach (var file in Directory.GetFiles(built).Where(f => f.EndsWith(".dll") || f.EndsWith(".json")))
                     File.Copy(file, Path.Combine(folder, Path.GetFileName(file)), true);
                 var loader = new ExtensionLoader();
@@ -94,6 +109,7 @@ internal static class Program
                 Check(logs.Any(l => l.Contains("Unsupported extension API")));
             });
             FolderInspectorTests.RunAll(artifacts, Run);
+            ScoopGitHubReleasesTests.RunAll(Run);
             ScoopSetupTests.RunAll(artifacts, Run);
             ScoopTests.RunAll(artifacts, Run);
             IntegrationTests.RunAll(artifacts, Run);
@@ -114,29 +130,37 @@ internal static class Program
             Run("Sidebar starts on Workspace and groups Windows tools cleanly", () =>
             {
                 Check(shell.Selected.Id == "overview");
-                Check(shell.Sidebar.Select(n => n.Id).SequenceEqual(new[] { "overview", "apps", "developer-tools", "windows-preferences", "windows-tools" }));
-                Check(shell.Sidebar.Single(n => n.Id == "developer-tools").Children.Select(n => n.Id).SequenceEqual(new[] { "binaries" }));
-                var preferences = shell.Sidebar.Single(n => n.Id == "windows-preferences");
-                Check(preferences.Children.Select(n => n.Id).SequenceEqual(new[] { "start-search", "explorer-taskbar", "appearance-signin", "privacy-suggestions", "power-gaming", "developer-settings" }));
+                Check(shell.Sidebar.Select(n => n.Id).SequenceEqual(new[] { "overview", "scoop", "binaries", "windows-tools" }));
                 var windowsTools = shell.Sidebar.Single(n => n.Id == "windows-tools");
-                Check(windowsTools.Children.Select(n => n.Id).SequenceEqual(new[] { "user-folders", "windows-updates", "activation", "context-menu", "link-handlers", "startup-apps" }));
+                Check(windowsTools.Title == "Windows");
+                Check(windowsTools.Children.Select(n => n.Id).SequenceEqual(new[] { "start-search", "explorer-taskbar", "context-menu", "link-handlers", "user-folders", "appearance-signin", "privacy-suggestions", "power-gaming", "startup-apps", "windows-updates", "activation", "developer-settings" }));
                 Check(shell.SettingsPage.Id == "settings" && !shell.Sidebar.Any(n => n.Id == "settings"));
                 Render(window, Path.Combine(artifacts, "workspace-startup.png"), 1180, 820);
             });
             Run("Sidebar remembers collapsed groups and reveals selected pages", () =>
             {
-                var preferences = shell.Sidebar.Single(n => n.Id == "windows-preferences"); var windowsTools = shell.Sidebar.Single(n => n.Id == "windows-tools");
-                preferences.IsExpanded = false; windowsTools.IsExpanded = false;
-                Check(uiContext.Get("navigation.expanded.windows-preferences") == "false" && uiContext.Get("navigation.expanded.windows-tools") == "false");
+                var windowsTools = shell.Sidebar.Single(n => n.Id == "windows-tools");
+                windowsTools.IsExpanded = false;
+                Check(uiContext.Get("navigation.expanded.windows-tools") == "false");
                 using (var restored = new ShellViewModel(uiContext, autoRefresh: false))
-                    Check(!restored.Sidebar.Single(n => n.Id == "windows-preferences").IsExpanded && !restored.Sidebar.Single(n => n.Id == "windows-tools").IsExpanded && restored.Selected.Id == "overview");
+                    Check(!restored.Sidebar.Single(n => n.Id == "windows-tools").IsExpanded && restored.Selected.Id == "overview");
                 shell.Selected = shell.Pages.Single(p => p.Id == "context-menu");
-                Check(windowsTools.IsExpanded && windowsTools.Children.Single(n => n.Id == "context-menu").IsSelected && !preferences.IsExpanded);
+                Check(windowsTools.IsExpanded && windowsTools.Children.Single(n => n.Id == "context-menu").IsSelected);
                 windowsTools.IsExpanded = false; shell.Selected = shell.Pages.Single(p => p.Id == "windows-updates");
                 Check(windowsTools.IsExpanded && windowsTools.Children.Single(n => n.Id == "windows-updates").IsSelected);
                 Render(window, Path.Combine(artifacts, "sidebar-windows-tools-expanded.png"), 1180, 820);
                 shell.Selected = shell.SettingsPage; Check(shell.IsSettingsSelected);
                 shell.Selected = shell.Pages.Single(p => p.Id == "overview");
+            });
+            Run("Sidebar search filters recursively and restores group expansion", () =>
+            {
+                var group = shell.Sidebar.Single(n => n.Id == "windows-tools"); group.IsExpanded = false;
+                shell.NavigationSearch = "startup";
+                Check(group.IsVisible && group.IsExpanded && group.Children.Single(n => n.Id == "startup-apps").IsVisible);
+                Check(!shell.Sidebar.Single(n => n.Id == "scoop").IsVisible && !group.Children.Single(n => n.Id == "activation").IsVisible);
+                Check(uiContext.Get("navigation.expanded.windows-tools") == "false");
+                shell.NavigationSearch = "windows"; Check(group.Children.All(n => n.IsVisible));
+                shell.NavigationSearch = ""; Check(!group.IsExpanded && shell.Sidebar.All(n => n.IsVisible));
             });
             Run("Sidebar group headers toggle with a single press across the full row", () =>
             {

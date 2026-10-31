@@ -35,11 +35,38 @@ public partial class ScoopWorkspaceView : UserControl
     {
         if (!initialized && Workspace is not null && (Window.GetWindow(this)?.DataContext is not ShellViewModel shell || shell.AutoRefresh)) { initialized = true; Execute("CheckSetup"); }
     }
-    private void InstalledSelection(object sender, SelectionChangedEventArgs e) { if (Workspace is not { } w) return; w.Selection.Clear(); w.Selection.AddRange(((DataGrid)sender).SelectedItems.OfType<ScoopPackage>()); }
-    private void SearchSelection(object sender, SelectionChangedEventArgs e) { if (Workspace is not { } w) return; w.SearchSelection.Clear(); w.SearchSelection.AddRange(((DataGrid)sender).SelectedItems.OfType<ScoopPackage>()); }
-    private void BucketSelection(object sender, SelectionChangedEventArgs e) { if (Workspace is not { } w) return; w.BucketSelection.Clear(); w.BucketSelection.AddRange(((DataGrid)sender).SelectedItems.OfType<ScoopBucket>()); }
+    private void InstalledSelection(object sender, SelectionChangedEventArgs e) { if (Workspace is not { } w) return; w.Selection.Clear(); w.Selection.AddRange(((DataGrid)sender).SelectedItems.OfType<ScoopPackage>()); UpdateButton.IsEnabled = w.Selection.Any(p => p.Status.StartsWith("Update:", StringComparison.OrdinalIgnoreCase)); HoldButton.Content = w.Selection.Count > 0 && w.Selection.All(p => p.Held) ? "Unhold" : "Hold"; }
+    private void HoldToggle(object sender, RoutedEventArgs e)
+    {
+        if (Workspace is not { } w) return;
+        var selected = w.Selection.Count > 0 ? w.Selection : w.Selected is { } package ? [package] : [];
+        var command = selected.Count > 0 && selected.All(p => p.Held) ? "unhold" : "hold";
+        if (w.Commands.TryGetValue(command, out var action) && action.CanExecute(null)) action.Execute(null);
+    }
+    private void UpdateCenterSelection(object sender, SelectionChangedEventArgs e)
+    {
+        if (Workspace is not { } w) return;
+        w.UpdateSelection.Clear(); w.UpdateSelection.AddRange(((DataGrid)sender).SelectedItems.OfType<ScoopPackage>());
+        UpdateCenterButton.IsEnabled = w.UpdateSelection.Count > 0 && w.UpdateSelection.All(p => !p.Held);
+    }
+    private void SearchSelection(object sender, SelectionChangedEventArgs e) { if (Workspace is not { } w) return; w.SearchSelection.Clear(); w.SearchSelection.AddRange(((DataGrid)sender).SelectedItems.OfType<ScoopPackage>()); SearchDownloadButton.IsEnabled = w.SearchSelection.Count > 0 && w.SearchSelection.All(p => p.Status != "Installed"); SearchInfoButton.IsEnabled = w.SearchSelection.Count == 1; }
+    private void SearchRightClick(object sender, MouseButtonEventArgs e)
+    {
+        var element = e.OriginalSource as DependencyObject;
+        while (element is not null && element is not DataGridRow) element = System.Windows.Media.VisualTreeHelper.GetParent(element);
+        if (element is DataGridRow { IsSelected: false } row) { SearchGrid.SelectedItems.Clear(); row.IsSelected = true; }
+    }
+    private void SearchContextOpened(object sender, RoutedEventArgs e)
+    {
+        SearchDownloadMenu.IsEnabled = SearchDownloadButton.IsEnabled;
+        SearchInfoMenu.IsEnabled = SearchInfoButton.IsEnabled;
+    }
+    private void SearchDownload(object sender, RoutedEventArgs e) => Execute("Download");
+    private void SearchInfo(object sender, RoutedEventArgs e) => Execute("Info");
+    private void BucketSelection(object sender, SelectionChangedEventArgs e) { if (Workspace is not { } w) return; w.BucketSelection.Clear(); w.BucketSelection.AddRange(((DataGrid)sender).SelectedItems.OfType<ScoopBucket>()); RemoveBucketButton.IsEnabled = w.BucketSelection.Count > 0; }
     private void DetailsClick(object sender, MouseButtonEventArgs e) { if (Workspace?.Selected is not null) OpenEditor("PackageEditor", "Package details"); }
     private void OpenDetails(object sender, RoutedEventArgs e) => OpenEditor("PackageEditor", "Package details");
+    private void OpenVersions(object sender, RoutedEventArgs e) => OpenEditor("VersionEditor", "Switch version");
     private void OpenPaths(object sender, RoutedEventArgs e) => OpenEditor("PathEditor", "PATH entries");
     private void OpenEditor(string template, string title)
     {
@@ -65,7 +92,21 @@ public partial class ScoopWorkspaceView : UserControl
         menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
         menu.IsOpen = true;
     }
-    private void ContextOpened(object sender, RoutedEventArgs e) { if (sender is ContextMenu menu) menu.IsEnabled = Workspace?.Selected is not null; }
+    private void InstalledRightClick(object sender, MouseButtonEventArgs e)
+    {
+        var element = e.OriginalSource as DependencyObject;
+        while (element is not null && element is not DataGridRow) element = System.Windows.Media.VisualTreeHelper.GetParent(element);
+        if (element is DataGridRow { IsSelected: false } row) { InstalledGrid.SelectedItems.Clear(); row.IsSelected = true; }
+    }
+    private void ContextOpened(object sender, RoutedEventArgs e)
+    {
+        if (sender is ContextMenu menu) menu.IsEnabled = Workspace?.Selected is not null;
+        ContextUpdateItem.IsEnabled = UpdateButton.IsEnabled;
+        ContextHold.Header = Workspace is { Selection.Count: > 0 } w && w.Selection.All(p => p.Held) ? "Allow updates" : "Hold";
+    }
+    private void ContextUpdate(object sender, RoutedEventArgs e) => Execute("update");
+    private void ContextReset(object sender, RoutedEventArgs e) => Execute("reset");
+    private void ContextUninstall(object sender, RoutedEventArgs e) => Execute("uninstall");
     private void ContextDetails(object sender, RoutedEventArgs e) => OpenDetails(sender, e);
     private void ContextFolder(object sender, RoutedEventArgs e) => Execute("OpenFolder");
     private void CopyName(object sender, RoutedEventArgs e) { if (Workspace?.Selected is { } a) Clipboard.SetText(a.Name); }

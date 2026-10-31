@@ -24,6 +24,13 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
     private readonly System.Collections.Concurrent.ConcurrentQueue<string> pendingActivity = new();
     private readonly DispatcherTimer activityTimer = new() { Interval = TimeSpan.FromMilliseconds(150) };
     private bool busy;
+    private string navigationSearch = "";
+    private Dictionary<NavigationNode, bool>? searchExpansion;
+    public string NavigationSearch
+    {
+        get => navigationSearch;
+        set { if (Set(ref navigationSearch, value ?? "")) FilterSidebar(); }
+    }
     public ObservableCollection<ModulePage> Pages { get; } = [];
     public ObservableCollection<NavigationNode> Sidebar { get; } = [];
     public ModulePage SettingsPage => Pages.Single(p => p.Id == "settings");
@@ -89,26 +96,51 @@ public sealed class ShellViewModel : ObservableObject, IDisposable
         NavigationNode Leaf(string id) { var page = Pages.Single(p => p.Id == id); return new(page.Id, page.Title, page); }
         NavigationNode Group(string id, string title) => new(id, title, expanded: context.Get("navigation.expanded." + id, "true") == "true", saveExpansion: (key, value) => context.Save("navigation.expanded." + key, value ? "true" : "false"));
         Sidebar.Add(Leaf("overview"));
-        var apps = Group("apps", "Apps Manager"); apps.Children.Add(Leaf("scoop")); Sidebar.Add(apps);
-        var developer = Group("developer-tools", "Developer Tools");
-        developer.Children.Add(Leaf("binaries"));
-        Sidebar.Add(developer);
-        var preferences = Group("windows-preferences", "Windows Preferences"); preferences.Children.Add(Leaf("start-search"));
-        foreach (var page in DevTools.Modules.Windows.WindowsPreferencesModule.Pages) preferences.Children.Add(Leaf(page.Id));
-        Sidebar.Add(preferences);
-        var windowsTools = Group("windows-tools", "Windows Tools");
-        foreach (var id in new[] { "user-folders", "windows-updates", "activation", "context-menu", "link-handlers" })
-            if (Pages.FirstOrDefault(p => p.Id == id) is { } page) windowsTools.Children.Add(new(page.Id, page.Title, page));
-        // Keep newly added Windows modules visible in the tools group automatically.
-        var known = Sidebar.SelectMany(Flatten).Concat(Flatten(windowsTools)).Where(n => n.Page is not null).Select(n => n.Page!.Id).Append("settings").ToHashSet();
-        foreach (var page in Pages.Where(p => p.Group == "Windows" && !known.Contains(p.Id))) { windowsTools.Children.Add(new(page.Id, page.Title, page)); known.Add(page.Id); }
-        Sidebar.Add(windowsTools);
+        Sidebar.Add(Leaf("scoop"));
+        Sidebar.Add(Leaf("binaries"));
+        var windows = Group("windows-tools", "Windows");
+        foreach (var id in new[] { "start-search", "explorer-taskbar", "context-menu", "link-handlers", "user-folders", "appearance-signin", "privacy-suggestions", "power-gaming", "startup-apps", "windows-updates", "activation", "developer-settings" })
+            if (Pages.FirstOrDefault(p => p.Id == id) is { } page) windows.Children.Add(new(page.Id, page.Title, page));
+        // Keep newly added Windows modules visible automatically.
+        var known = Sidebar.SelectMany(Flatten).Concat(Flatten(windows)).Where(n => n.Page is not null).Select(n => n.Page!.Id).Append("settings").ToHashSet();
+        foreach (var page in Pages.Where(p => p.Group == "Windows" && !known.Contains(p.Id))) { windows.Children.Add(new(page.Id, page.Title, page)); known.Add(page.Id); }
+        Sidebar.Add(windows);
         foreach (var grouping in Pages.Where(p => !known.Contains(p.Id)).GroupBy(p => p.Group))
         {
             var group = Group("extension-" + grouping.Key, grouping.Key);
             foreach (var page in grouping) group.Children.Add(new(page.Id, page.Title, page));
             Sidebar.Add(group);
         }
+    }
+    private void FilterSidebar()
+    {
+        var query = NavigationSearch.Trim();
+        var nodes = Sidebar.SelectMany(Flatten).ToArray();
+        if (query.Length == 0)
+        {
+            foreach (var node in nodes) node.IsVisible = true;
+            if (searchExpansion is not null)
+            {
+                foreach (var pair in searchExpansion) { pair.Key.IsExpanded = pair.Value; pair.Key.SetTemporaryExpansion(false); }
+                searchExpansion = null;
+            }
+            return;
+        }
+        if (searchExpansion is null)
+        {
+            searchExpansion = nodes.Where(n => n.IsGroup).ToDictionary(n => n, n => n.IsExpanded);
+            foreach (var node in searchExpansion.Keys) node.SetTemporaryExpansion(true);
+        }
+        bool Filter(NavigationNode node, bool parentMatches)
+        {
+            var match = parentMatches || node.Title.Contains(query, StringComparison.OrdinalIgnoreCase);
+            var childMatch = false;
+            foreach (var child in node.Children) childMatch = Filter(child, match) || childMatch;
+            node.IsVisible = match || childMatch;
+            if (node.IsGroup && node.IsVisible) node.IsExpanded = true;
+            return node.IsVisible;
+        }
+        foreach (var node in Sidebar) Filter(node, false);
     }
     private static IEnumerable<NavigationNode> Flatten(NavigationNode node) => new[] { node }.Concat(node.Children.SelectMany(Flatten));
     private void AddModule(IDevToolsModule module)

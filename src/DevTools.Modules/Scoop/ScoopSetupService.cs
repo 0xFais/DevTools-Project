@@ -8,6 +8,8 @@ public interface IScoopSetupBackend
 {
     string UserPath { get; set; }
     string ProcessPath { get; set; }
+    string UserScoop { get; set; }
+    string ProcessScoop { get; set; }
     void Broadcast();
     Task DownloadInstaller(string destination, CancellationToken ct);
     Task Run(string script, CancellationToken ct, IProgress<string> log);
@@ -17,6 +19,8 @@ public sealed class WindowsScoopSetupBackend : IScoopSetupBackend
     private static readonly HttpClient http = new() { Timeout = TimeSpan.FromMinutes(5) };
     public string UserPath { get => Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.User) ?? ""; set => Environment.SetEnvironmentVariable("PATH", value, EnvironmentVariableTarget.User); }
     public string ProcessPath { get => Environment.GetEnvironmentVariable("PATH") ?? ""; set => Environment.SetEnvironmentVariable("PATH", value); }
+    public string UserScoop { get => Environment.GetEnvironmentVariable("SCOOP", EnvironmentVariableTarget.User) ?? ""; set => Environment.SetEnvironmentVariable("SCOOP", value, EnvironmentVariableTarget.User); }
+    public string ProcessScoop { get => Environment.GetEnvironmentVariable("SCOOP") ?? ""; set => Environment.SetEnvironmentVariable("SCOOP", value); }
     public void Broadcast() => WindowsEnvironment.Broadcast();
     public async Task DownloadInstaller(string destination, CancellationToken ct)
     {
@@ -71,6 +75,23 @@ public sealed class ScoopSetupService(IScoopSetupBackend backend)
         if (after != before) backend.Broadcast();
         log.Report("User PATH verified. Open a new terminal to use Scoop.");
         await backend.Run(ScoopService.Script(status.Root, ["--version"]), ct, log);
+    }
+    public async Task ConfigurePortable(string root, Action<string> backupPath, Action<string> backupScoop, CancellationToken ct, IProgress<string> log)
+    {
+        var status = Probe(root);
+        if (status.State is not (ScoopSetupState.Ready or ScoopSetupState.PathMissing)) throw new InvalidOperationException(status.Message);
+        ct.ThrowIfCancellationRequested();
+        var previous = backend.UserScoop;
+        if (!string.Equals(previous, status.Root, StringComparison.OrdinalIgnoreCase))
+        {
+            backupScoop(previous);
+            backend.UserScoop = status.Root;
+            if (!string.Equals(backend.UserScoop, status.Root, StringComparison.OrdinalIgnoreCase)) throw new IOException("The user SCOOP environment variable could not be verified.");
+            backend.Broadcast();
+        }
+        backend.ProcessScoop = status.Root;
+        await AddToPath(status.Root, backupPath, ct, log);
+        log.Report("Portable Scoop environment configured and verified. PowerShell policy and global Git settings were not changed.");
     }
     public static string ValidateDestination(string destination)
     {

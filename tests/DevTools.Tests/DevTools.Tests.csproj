@@ -1,1 +1,1 @@
-<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType><UseWPF>true</UseWPF></PropertyGroup><ItemGroup><ProjectReference Include="../../src/DevTools.App/DevTools.App.csproj" /></ItemGroup></Project>
+<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType><UseWPF>true</UseWPF></PropertyGroup><ItemGroup><ProjectReference Include="../../src/DevTools.App/DevTools.App.csproj" /><ProjectReference Include="../../extensions/DevTools.SampleExtension/DevTools.SampleExtension.csproj" ReferenceOutputAssembly="false" /></ItemGroup></Project>

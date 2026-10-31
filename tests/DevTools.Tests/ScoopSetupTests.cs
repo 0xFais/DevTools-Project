@@ -36,6 +36,17 @@ internal static class ScoopSetupTests
             Check(after == "C:\\Keep;C:\\Other;" + Path.Combine(root, "shims") && backend.UserPath == after && backend.Writes == writes);
             Check(backups.Single() == "C:\\Keep;C:\\Other" && backend.Broadcasts == 1 && ScoopSetupService.ContainsPath(backend.ProcessPath, Path.Combine(root, "shims")));
         });
+        run("Portable setup verifies root and configures user and process environment", () =>
+        {
+            var root = Folder(artifacts); Seed(root); var backend = new FakeBackend { UserScoop = "old", UserPath = "existing" }; var paths = new List<string>(); var scoops = new List<string>();
+            var setup = new ScoopSetupService(backend);
+            setup.ConfigurePortable(root, paths.Add, scoops.Add, CancellationToken.None, Log).GetAwaiter().GetResult();
+            Check(backend.UserScoop == root && backend.ProcessScoop == root && scoops.Single() == "old" && paths.Single() == "existing");
+            Check(ScoopSetupService.ContainsPath(backend.UserPath, Path.Combine(root, "shims")) && backend.Scripts.Count == 1);
+            var missing = Folder(artifacts); var before = backend.UserScoop; var failed = false;
+            try { setup.ConfigurePortable(missing, _ => { }, _ => { }, CancellationToken.None, Log).GetAwaiter().GetResult(); } catch (InvalidOperationException) { failed = true; }
+            Check(failed && backend.UserScoop == before);
+        });
         run("Missing Scoop launcher cannot be added to PATH", () =>
         {
             var root = Folder(artifacts); Seed(root); File.Delete(Path.Combine(root, "shims", "scoop.cmd")); var backend = new FakeBackend(); var failed = false;
@@ -89,6 +100,8 @@ internal static class ScoopSetupTests
         private string userPath = "";
         public string UserPath { get => userPath; set { userPath = value; Writes++; } }
         public string ProcessPath { get; set; } = "";
+        public string UserScoop { get; set; } = "";
+        public string ProcessScoop { get; set; } = "";
         internal int Writes, Broadcasts, Downloads;
         internal string InstallRoot = "";
         internal bool CancelDownload, FailInstall;

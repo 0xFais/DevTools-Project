@@ -30,9 +30,11 @@ public sealed class ScoopIconConverter : IValueConverter
                 try { using var stream = File.OpenRead(file); var icon = BitmapFrame.Create(stream, BitmapCreateOptions.None, BitmapCacheOption.OnLoad); icon.Freeze(); cache[key] = icon; return icon; }
                 catch (Exception e) when (e is IOException or NotSupportedException or System.IO.FileFormatException) { }
             }
-            // Script-only apps use their registered file-type icon. Do not cache misses.
-            foreach (var file in candidates) if (ShellIcon(file) is { } icon) return icon;
-            return Extract(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "shell32.dll"), 2);
+            // Cache shell and fallback icons too, so recycled rows avoid repeated extraction.
+            foreach (var file in candidates) if (ShellIcon(file) is { } icon) { cache[key] = icon; return icon; }
+            var fallback = Extract(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "shell32.dll"), 2);
+            if (fallback is not null) cache[key] = fallback;
+            return fallback;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or System.ComponentModel.Win32Exception) { return null; }
     }
@@ -67,7 +69,7 @@ public sealed class ScoopIconConverter : IValueConverter
 // receives its own result, and concurrency is bounded during a full list refresh.
 public static class ScoopAsyncIcon
 {
-    private static readonly SemaphoreSlim Workers = new(2);
+    private static readonly SemaphoreSlim Workers = new(4);
     private static readonly ScoopIconConverter Converter = new();
     public static readonly DependencyProperty DirectoryProperty = DependencyProperty.RegisterAttached(
         "Directory", typeof(string), typeof(ScoopAsyncIcon), new PropertyMetadata(null, Changed));
